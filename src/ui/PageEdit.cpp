@@ -76,6 +76,25 @@ int PageEdit::pageWidthPx() const
     return int(qRound(twipsToPx(m_page.width)));
 }
 
+int PageEdit::pageHeightPx() const
+{
+    return int(qRound(twipsToPx(m_page.height)));
+}
+
+void PageEdit::setDocumentWidth(qreal width)
+{
+    QTextDocument *doc = document();
+    const qreal h = m_mode == ViewMode::Page ? pageHeightPx() : -1;
+    const QSizeF want(width, h);
+    if (doc->pageSize() != want)
+        doc->setPageSize(want);  // layout only: no undo step, no modified flag
+}
+
+void PageEdit::applyPagination()
+{
+    setDocumentWidth(document()->pageSize().width());
+}
+
 void PageEdit::setPageSetup(const PageSetup &page)
 {
     m_page = page;
@@ -90,6 +109,7 @@ void PageEdit::updateMargins()
     if (m_mode == ViewMode::Page && m_embedded) {
         setLineWrapColumnOrWidth(pageWidthPx());
         setViewportMargins(0, 0, 0, 0);
+        applyPagination();
         return;
     }
     if (m_mode == ViewMode::Page) {
@@ -98,6 +118,7 @@ void PageEdit::updateMargins()
         const int left = qMax(0, (avail - pw) / 2);
         const int right = qMax(0, avail - pw - left);
         setViewportMargins(left, 24, right, 0);
+        applyPagination();
         return;
     }
     // Draft: text spans the window. The page margins are part of the document
@@ -110,11 +131,12 @@ void PageEdit::updateMargins()
     const int hideT = qMax(0, int(rf.topMargin()) - 16);
     setLineWrapColumnOrWidth(qMax(200, avail + hideL + hideR));
     setViewportMargins(-hideL, -hideT, -hideR, 0);
+    applyPagination();
 }
 
 void PageEdit::resizeEvent(QResizeEvent *e)
 {
-    QTextEdit::resizeEvent(e);
+    QTextEdit::resizeEvent(e);  // relayouts with page height -1
     updateMargins();
 }
 
@@ -124,7 +146,89 @@ void PageEdit::paintEvent(QPaintEvent *e)
     QPainter p(viewport());
     const QPointF off(-horizontalScrollBar()->value(), -verticalScrollBar()->value());
     p.translate(off);
-    paintDecorations(p, document(), QRectF(viewport()->rect()).translated(-off), true, m_paper == theme::Paper::Dark);
+    const QRectF clip = QRectF(viewport()->rect()).translated(-off);
+    if (m_paper == theme::Paper::Dark)
+        paintDarkCards(p, clip);
+    // Page view paginates for real, so page-break markers are only needed in Draft.
+    paintDecorations(p, document(), clip, m_mode == ViewMode::Draft, m_paper == theme::Paper::Dark);
+    if (m_mode == ViewMode::Page)
+        paintPageGaps(p, document(), clip, m_desk);
+}
+
+void PageEdit::paintDarkCards(QPainter &p, const QRectF &clip)
+{
+    // Light neutral paragraph shading (code blocks) would glare on dark paper, and
+    // Qt draws it straight from the document. Repaint those blocks: dark fill, then
+    // the block's own text layout again (highlighter ink and spell underlines are
+    // part of the layout), with selection, find highlights and the cursor on top.
+    QTextDocument *doc = document();
+    QAbstractTextDocumentLayout *layout = doc->documentLayout();
+    const QTextCursor cur = textCursor();
+    const QList<ExtraSelection> extras = extraSelections();
+    const QPalette pal = palette();
+    for (QTextBlock b = doc->begin(); b.isValid(); b = b.next()) {
+        const QBrush bg = b.blockFormat().background();
+        if (bg.style() == Qt::NoBrush || !spell::SpellHighlighter::isNeutralLight(bg.color()))
+            continue;
+        if (doc->frameAt(b.position()) != doc->rootFrame() || !b.layout())
+            continue;
+        const QRectF r = layout->blockBoundingRect(b);
+        if (r.bottom() < clip.top() || r.top() > clip.bottom())
+            continue;
+        // Qt fills paragraph shading between the paragraph's own margins.
+        const QTextBlockFormat bf = b.blockFormat();
+        const QTextFrameFormat rf = doc->rootFrame()->frameFormat();
+        const qreal left = rf.leftMargin() + bf.leftMargin() + bf.indent() * doc->indentWidth();
+        const qreal right = doc->textWidth() - rf.rightMargin() - bf.rightMargin();
+        // 1px overdraw: the zoom scales by fractions and anti-aliases the light edge.
+        p.fillRect(QRectF(left, r.top(), right - left, r.height()).adjusted(-1, -1, 1, 1), spell::SpellHighlighter::darkCard());
+
+        const int bs = b.position(), be = bs + b.length();
+        QList<QTextLayout::FormatRange> sels;
+        auto add = [&](const QTextCursor &c, const QTextCharFormat &f) {
+            const int s = qMax(c.selectionStart(), bs), e = qMin(c.selectionEnd(), be);
+            if (e > s)
+                sels.append({s - bs, e - s, f});
+        };
+        for (const ExtraSelection &x : extras)
+            add(x.cursor, x.format);
+        if (cur.hasSelection()) {
+            QTextCharFormat f;
+            f.setBackground(pal.brush(QPalette::Highlight));
+            f.setForeground(pal.brush(QPalette::HighlightedText));
+            add(cur, f);
+        }
+        b.layout()->draw(&p, QPointF(), sels, clip);
+        // Qt's blinking cursor was painted over: show a steady one here instead.
+        if (!cur.hasSelection() && cur.block() == b && hasFocus()) {
+            p.save();
+            p.setPen(theme::inkColor(m_paper));
+            b.layout()->drawCursor(&p, QPointF(), cur.position() - bs, cursorWidth());
+            p.restore();
+        }
+    }
+}
+
+void PageEdit::paintPageGaps(QPainter &p, QTextDocument *doc, const QRectF &clip, const QColor &desk)
+{
+    // Pages are laid out back to back; the boundary sits in the blank band made of
+    // one page's bottom margin and the next page's top margin. Cover the middle of
+    // that band with desk so the pages read as separate sheets.
+    const qreal ph = doc->pageSize().height();
+    if (ph <= 0)
+        return;
+    const int pages = doc->pageCount();
+    const qreal w = doc->pageSize().width();
+    const QColor edge = desk.lightness() > 128 ? desk.darker(118) : desk.lighter(135);
+    for (int k = 1; k < pages; ++k) {
+        const qreal y = k * ph;
+        const QRectF band(0, y - kPageGap / 2.0, w, kPageGap);
+        if (!band.intersects(clip.adjusted(0, -2, 0, 2)))
+            continue;
+        p.fillRect(band, desk);
+        p.fillRect(QRectF(0, band.top(), w, 1), edge);
+        p.fillRect(QRectF(0, band.bottom() - 1, w, 1), edge);
+    }
 }
 
 static bool parseBorder(const QString &spec, QColor *color, double *width, double *space, bool darkPaper)

@@ -33,11 +33,21 @@ public:
     void setPageSetup(const docx::PageSetup &page);
     const docx::PageSetup &pageSetup() const { return m_page; }
     int pageWidthPx() const;
+    int pageHeightPx() const;
+
+    // Set the text width (as QTextDocument::setTextWidth) and, in Page view, the
+    // page height, so Qt's layout breaks pages exactly as print and PDF do.
+    // QTextEdit and setTextWidth() both reset the height to -1, so every width
+    // change goes through here.
+    void setDocumentWidth(qreal width);
 
     // Desk (around the page) and paper colours. Display only: the document's own
     // colours are untouched, so save, print and PDF are unaffected.
     void setColors(const QColor &desk, theme::Paper paper);
     theme::Paper paper() const { return m_paper; }
+
+    static constexpr int kPageGap = 16;  // desk band drawn between pages, document px
+    static void paintPageGaps(QPainter &p, QTextDocument *doc, const QRectF &clip, const QColor &desk);
 
     static void paintDecorations(QPainter &p, QTextDocument *doc, const QRectF &clip, bool showBreaks,
                                  bool darkPaper = false);
@@ -55,6 +65,8 @@ signals:
 private:
     void updateMargins();
     void updatePalette();
+    void applyPagination();
+    void paintDarkCards(QPainter &p, const QRectF &clip);
     bool m_embedded = false;
     docx::PageSetup m_page;
     ViewMode m_mode = ViewMode::Page;

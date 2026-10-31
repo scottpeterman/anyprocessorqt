@@ -44,6 +44,16 @@ QColor SpellHighlighter::onDarkPaper(const QColor &c)
     return QColor::fromHslF(h, s, nl, a);
 }
 
+bool SpellHighlighter::isNeutralLight(const QColor &c)
+{
+    return c.isValid() && c.lightnessF() > 0.8 && c.hslSaturationF() < 0.25;
+}
+
+QColor SpellHighlighter::darkCard()
+{
+    return QColor(0x2B, 0x2D, 0x32);
+}
+
 static bool isLight(const QColor &c)
 {
     return c.lightnessF() > 0.5;
@@ -56,6 +66,8 @@ void SpellHighlighter::applyDarkPaperInk()
     const QTextBlockFormat bf = block.blockFormat();
     if (bf.background().style() != Qt::NoBrush) {
         under = bf.background().color();
+        if (isNeutralLight(under))
+            under = QColor();  // repainted as a dark card by PageEdit: treat as paper
     } else if (QTextTable *t = QTextCursor(block).currentTable()) {
         const QTextCharFormat cellFmt = t->cellAt(block.position()).format();
         if (cellFmt.background().style() != Qt::NoBrush)
@@ -70,7 +82,12 @@ void SpellHighlighter::applyDarkPaperInk()
         if (cf.isImageFormat())
             continue;
         const bool hasInk = cf.foreground().style() != Qt::NoBrush;
-        const QColor bg = cf.background().style() != Qt::NoBrush ? cf.background().color() : under;
+        QColor bg = cf.background().style() != Qt::NoBrush ? cf.background().color() : under;
+        QTextCharFormat f;
+        if (cf.background().style() != Qt::NoBrush && isNeutralLight(bg)) {
+            f.setBackground(darkCard());  // inline code: dark card, paper ink
+            bg = QColor();
+        }
 
         QColor ink;
         if (bg.isValid()) {
@@ -84,10 +101,10 @@ void SpellHighlighter::applyDarkPaperInk()
             if (shown != orig)
                 ink = shown;
         }
-        if (!ink.isValid())
+        if (ink.isValid())
+            f.setForeground(ink);
+        if (f.properties().isEmpty())
             continue;
-        QTextCharFormat f;
-        f.setForeground(ink);
         setFormat(frag.position() - block.position(), frag.length(), f);
     }
 }

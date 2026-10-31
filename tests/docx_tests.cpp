@@ -13,6 +13,7 @@
 #include "spell/SpellHighlighter.h"
 #include "ui/PageEdit.h"
 #include "ui/Theme.h"
+#include <QScrollBar>
 #include "ui/FindBar.h"
 #include "ui/ZoomView.h"
 #include <QGraphicsProxyWidget>
@@ -604,6 +605,44 @@ static void paperTests()
     CHECK(!shownInk(doc, 6).isValid(), "white paper drops the display ink");
     CHECK(edit.palette().color(QPalette::Base) == QColor(Qt::white), "white paper base");
 
+    // Light neutral paragraph shading (code blocks) shows as a dark card on dark
+    // paper, with selection still drawn on top.
+    {
+        PageEdit e2;
+        Package p2 = Package::blank();
+        DocxReader::build(p2, e2.document(), &err);
+        e2.setPageSetup(p2.page);
+        QTextCursor cc(e2.document());
+        cc.insertText(QStringLiteral("before"));
+        QTextBlockFormat shaded;
+        shaded.setBackground(QColor(0xF3, 0xF4, 0xF6));
+        cc.insertBlock(shaded);
+        cc.insertText(QStringLiteral("int x = 1;            "));
+        e2.document()->setModified(false);
+        e2.resize(1000, 600);
+        e2.show();
+        e2.setColors(theme::deskColor(), theme::Paper::Dark);
+        QApplication::processEvents();
+        const QTextBlock code = e2.document()->lastBlock();
+        const QRectF r = e2.document()->documentLayout()->blockBoundingRect(code);
+        const QPoint offs(-e2.horizontalScrollBar()->value(), -e2.verticalScrollBar()->value());
+        const QPoint blank = (QPointF(r.right() - 20, r.center().y())).toPoint() + offs;
+        QImage img = e2.viewport()->grab().toImage();
+        CHECK(QColor(img.pixel(blank)).lightness() < 80, "code block shading shown dark on dark paper");
+        QTextCursor sel(code);
+        sel.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+        e2.setTextCursor(sel);
+        QApplication::processEvents();
+        img = e2.viewport()->grab().toImage();
+        const QPoint mid = e2.cursorRect(QTextCursor(code)).center() + QPoint(30, 0);
+        bool hasHighlight = false;
+        const QColor hl = e2.palette().color(QPalette::Highlight);
+        for (int dx = -10; dx <= 10 && !hasHighlight; ++dx)
+            hasHighlight = QColor(img.pixel(mid + QPoint(dx, 0))) == hl;
+        CHECK(hasHighlight, "selection drawn over the dark code card");
+        CHECK(!e2.document()->isModified(), "dark code card leaves document unmodified");
+    }
+
     const QPalette sys = QApplication::palette();
     theme::captureSystem();
     theme::apply(theme::Theme::Dark);
@@ -615,6 +654,80 @@ static void paperTests()
     CHECK(theme::themeFromString(QStringLiteral("bogus")) == theme::Theme::System
               && theme::paperFromString(theme::toString(theme::Paper::Dark)) == theme::Paper::Dark,
           "theme settings strings");
+}
+
+static void pageTests(const QString &fixture)
+{
+    // Page view paginates like print: same page count, every paragraph on the same
+    // page as the printed copy, and none of it touches the document.
+    auto *edit = new PageEdit;
+    ZoomView view(edit);
+    Package pkg = Package::blank();
+    QString err;
+    DocxReader::build(pkg, edit->document(), &err);
+    edit->setPageSetup(pkg.page);
+    QTextCursor c(edit->document());
+    for (int i = 0; i < 140; ++i)
+        c.insertText(QStringLiteral("Paragraph %1 with enough words to wrap onto a second line at letter width, "
+                                    "so the page breaks fall inside wrapped text as well as between paragraphs.\n")
+                         .arg(i));
+    edit->document()->setModified(false);
+    edit->document()->clearUndoRedoStacks();
+    view.resize(1000, 800);
+    view.show();
+    QApplication::processEvents();
+    QApplication::processEvents();
+    QTextDocument *doc = edit->document();
+    const qreal ph = edit->pageHeightPx();
+    CHECK(qAbs(doc->pageSize().height() - ph) < 0.5, "page view sets the page height");
+    CHECK(doc->pageCount() > 3, qPrintable(QStringLiteral("long document spans pages (%1)").arg(doc->pageCount())));
+
+    std::unique_ptr<QTextDocument> copy(doc->clone());
+    copy->setPageSize(QSizeF(twipsToPx(pkg.page.width), twipsToPx(pkg.page.height)));
+    CHECK(copy->pageCount() == doc->pageCount(), "screen page count matches print");
+    bool samePages = true;
+    for (QTextBlock a = doc->begin(), b = copy->begin(); a.isValid() && b.isValid(); a = a.next(), b = b.next()) {
+        const int pa = int(doc->documentLayout()->blockBoundingRect(a).top() / ph);
+        const int pb = int(copy->documentLayout()->blockBoundingRect(b).top() / ph);
+        if (pa != pb || a.layout()->lineCount() != b.layout()->lineCount())
+            samePages = false;
+    }
+    CHECK(samePages, "every paragraph on the same page and lines as print");
+    CHECK(edit->height() >= doc->pageCount() * int(ph), "editor shows whole sheets");
+    CHECK(!doc->isModified() && !doc->isUndoAvailable(), "pagination leaves document unmodified");
+
+    view.resize(700, 600);  // QTextEdit relayouts on resize and drops the page height
+    QApplication::processEvents();
+    QApplication::processEvents();
+    CHECK(qAbs(doc->pageSize().height() - ph) < 0.5, "pagination survives a resize");
+    view.setZoom(2.0);
+    QApplication::processEvents();
+    CHECK(qAbs(doc->pageSize().height() - ph) < 0.5, "pagination survives zoom");
+    edit->setViewMode(PageEdit::ViewMode::Draft);
+    QApplication::processEvents();
+    QApplication::processEvents();
+    CHECK(doc->pageSize().height() <= 0, "draft view is continuous");
+    edit->setViewMode(PageEdit::ViewMode::Page);
+    QApplication::processEvents();
+    QApplication::processEvents();
+    CHECK(qAbs(doc->pageSize().height() - ph) < 0.5 && doc->pageCount() == copy->pageCount(), "page view paginates again");
+    CHECK(!doc->isModified() && !doc->isUndoAvailable(), "view switching with pages leaves document unmodified");
+
+    // The fixture's explicit page break starts page two on screen too.
+    Package fpkg;
+    auto *fedit = new PageEdit;
+    ZoomView fview(fedit);
+    if (DocxReader::loadFile(fixture, fedit->document(), &fpkg, &err)) {
+        fedit->setPageSetup(fpkg.page);
+        fview.resize(1000, 800);
+        fview.show();
+        QApplication::processEvents();
+        QApplication::processEvents();
+        const QTextBlock p2 = findBlock(*fedit->document(), QStringLiteral("First line on page two"));
+        const qreal fph = fedit->pageHeightPx();
+        CHECK(p2.isValid() && int(fedit->document()->documentLayout()->blockBoundingRect(p2).top() / fph) == 1,
+              "page break starts the next page on screen");
+    }
 }
 
 static void spellMenuTest()
@@ -918,8 +1031,10 @@ int main(int argc, char **argv)
     codeTests(keep.isEmpty() ? QString() : keep + QStringLiteral(".code.docx"));
     for (const QString &f : files) {
         roundTripFile(f);
-        if (f.endsWith(QLatin1String("features.docx")))
+        if (f.endsWith(QLatin1String("features.docx"))) {
             viewTests(f);
+            pageTests(f);
+        }
         if (f.endsWith(QLatin1String("resume.docx")))
             zoomTests(f);
         if (f.endsWith(QLatin1String("features.docx")))

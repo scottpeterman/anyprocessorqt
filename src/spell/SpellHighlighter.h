@@ -28,6 +28,12 @@ public:
     // light tint of the same hue; colours already light enough are kept.
     static QColor onDarkPaper(const QColor &c);
 
+    // Near-white, near-grey shading (code blocks, inline code). On dark paper it is
+    // shown as a dark card instead: PageEdit repaints paragraph shading, and the
+    // highlighter swaps character shading.
+    static bool isNeutralLight(const QColor &c);
+    static QColor darkCard();
+
 protected:
     void highlightBlock(const QString &text) override;
 

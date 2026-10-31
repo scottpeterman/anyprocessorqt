@@ -12,6 +12,7 @@
 #include "spell/SpellChecker.h"
 
 #include <QAction>
+#include <QAbstractTextDocumentLayout>
 #include <QActionGroup>
 #include <QApplication>
 #include <QCloseEvent>
@@ -38,6 +39,7 @@
 #include <QTextDocument>
 #include <QTextDocumentFragment>
 #include <QTextList>
+#include <QTextLayout>
 #include <QTextTable>
 #include <QTimer>
 #include <QToolBar>
@@ -75,8 +77,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     buildMenus();
     buildToolbars();
 
+    m_pageLabel = new QLabel(this);
+    m_pageLabel->setContentsMargins(0, 0, 10, 0);
+    statusBar()->addPermanentWidget(m_pageLabel);
     m_wordCount = new QLabel(this);
     statusBar()->addPermanentWidget(m_wordCount);
+    connect(m_edit, &QTextEdit::cursorPositionChanged, this, &MainWindow::updatePageUi);
+    connect(m_edit->document()->documentLayout(), &QAbstractTextDocumentLayout::pageCountChanged, this,
+            &MainWindow::updatePageUi);
     m_zoomButton = new QToolButton(this);
     m_zoomButton->setAutoRaise(true);
     m_zoomButton->setPopupMode(QToolButton::InstantPopup);
@@ -156,6 +164,7 @@ void MainWindow::setDraftView(bool draft)
     m_edit->setViewMode(draft ? PageEdit::ViewMode::Draft : PageEdit::ViewMode::Page);
     (draft ? m_draftView : m_pageView)->setChecked(true);
     QSettings().setValue(QStringLiteral("viewMode"), draft ? QStringLiteral("draft") : QStringLiteral("page"));
+    QTimer::singleShot(0, this, &MainWindow::updatePageUi);
 }
 
 void MainWindow::setTheme(int t)
@@ -550,6 +559,7 @@ void MainWindow::newDocument()
     DocxReader::build(m_pkg, m_edit->document(), &err);
     m_edit->setPageSetup(m_pkg.page);
     m_edit->document()->clearUndoRedoStacks();
+    m_zoomView->scrollToTop();
     rebuildStyleCombo();
     setCurrentPath(QString());
     updateFormatUi();
@@ -571,6 +581,7 @@ bool MainWindow::openFile(const QString &path)
     m_edit->setPageSetup(m_pkg.page);
     m_edit->document()->clearUndoRedoStacks();
     m_edit->moveCursor(QTextCursor::Start);
+    m_zoomView->scrollToTop();
     rebuildStyleCombo();
     setCurrentPath(path);
     QSettings().setValue(QStringLiteral("lastDir"), QFileInfo(path).absolutePath());
@@ -1218,6 +1229,26 @@ void MainWindow::updateFormatUi()
     for (QAction *act : {m_rowAbove, m_rowBelow, m_colLeft, m_colRight, m_delRow, m_delCol, m_delTable, m_merge, m_split})
         act->setEnabled(inTable);
     m_updatingUi = false;
+}
+
+void MainWindow::updatePageUi()
+{
+    QTextDocument *doc = m_edit->document();
+    const qreal ph = doc->pageSize().height();
+    if (m_edit->viewMode() != PageEdit::ViewMode::Page || ph <= 0) {
+        m_pageLabel->clear();
+        return;
+    }
+    const QTextCursor c = m_edit->textCursor();
+    const QTextLayout *tl = c.block().layout();
+    qreal y = doc->documentLayout()->blockBoundingRect(c.block()).top();
+    if (tl) {
+        const QTextLine line = tl->lineForTextPosition(c.positionInBlock());
+        if (line.isValid())
+            y += line.y();
+    }
+    const int pages = doc->pageCount();
+    m_pageLabel->setText(tr("Page %1 of %2").arg(qBound(1, int(y / ph) + 1, pages)).arg(pages));
 }
 
 void MainWindow::updateWordCount()

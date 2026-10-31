@@ -68,6 +68,7 @@ private:
 
     void updateFormatUi();
     void updateWordCount();
+    void updatePageUi();
 
     PageEdit *m_edit = nullptr;
     docx::Package m_pkg;
@@ -82,6 +83,7 @@ private:
     QFontComboBox *m_fontCombo = nullptr;
     QComboBox *m_sizeCombo = nullptr;
     QLabel *m_wordCount = nullptr;
+    QLabel *m_pageLabel = nullptr;
     QTimer *m_countTimer = nullptr;
     bool m_updatingUi = false;
 
