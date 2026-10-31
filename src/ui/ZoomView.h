@@ -20,6 +20,7 @@ public:
     void setZoom(double factor);
     void zoomIn();
     void zoomOut();
+    void setDeskColor(const QColor &c);
 
     static constexpr double kMin = 0.5;
     static constexpr double kMax = 4.0;

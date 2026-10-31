@@ -27,13 +27,9 @@ PageEdit::PageEdit(QWidget *parent) : QTextEdit(parent)
     setLineWrapMode(QTextEdit::FixedPixelWidth);
     setFrameShape(QFrame::NoFrame);
     setAutoFillBackground(true);
-    QPalette pal = palette();
-    pal.setColor(QPalette::Window, QColor(0xE6, 0xE6, 0xE6));
-    pal.setColor(QPalette::Base, Qt::white);
-    pal.setColor(QPalette::Text, Qt::black);
-    setPalette(pal);
     viewport()->setAutoFillBackground(true);
     m_spell = new spell::SpellHighlighter(document());
+    updatePalette();
     setPageSetup(PageSetup());
 }
 
@@ -42,12 +38,29 @@ void PageEdit::setViewMode(ViewMode mode)
     if (m_mode == mode)
         return;
     m_mode = mode;
-    QPalette pal = palette();
-    pal.setColor(QPalette::Window, mode == ViewMode::Page ? QColor(0xE6, 0xE6, 0xE6) : QColor(Qt::white));
-    setPalette(pal);
+    updatePalette();
     updateMargins();
     ensureCursorVisible();
     emit geometryHintsChanged();
+}
+
+void PageEdit::setColors(const QColor &desk, theme::Paper paper)
+{
+    m_desk = desk;
+    m_paper = paper;
+    updatePalette();
+    m_spell->setDarkPaper(paper == theme::Paper::Dark);
+    viewport()->update();
+}
+
+void PageEdit::updatePalette()
+{
+    const QColor paper = theme::paperColor(m_paper);
+    QPalette pal = palette();
+    pal.setColor(QPalette::Window, m_mode == ViewMode::Page ? m_desk : paper);
+    pal.setColor(QPalette::Base, paper);
+    pal.setColor(QPalette::Text, theme::inkColor(m_paper));
+    setPalette(pal);
 }
 
 void PageEdit::setEmbedded(bool embedded)
@@ -111,10 +124,10 @@ void PageEdit::paintEvent(QPaintEvent *e)
     QPainter p(viewport());
     const QPointF off(-horizontalScrollBar()->value(), -verticalScrollBar()->value());
     p.translate(off);
-    paintDecorations(p, document(), QRectF(viewport()->rect()).translated(-off), true);
+    paintDecorations(p, document(), QRectF(viewport()->rect()).translated(-off), true, m_paper == theme::Paper::Dark);
 }
 
-static bool parseBorder(const QString &spec, QColor *color, double *width, double *space)
+static bool parseBorder(const QString &spec, QColor *color, double *width, double *space, bool darkPaper)
 {
     const QStringList f = spec.split(QLatin1Char('|'));
     if (f.size() != 4)
@@ -122,10 +135,12 @@ static bool parseBorder(const QString &spec, QColor *color, double *width, doubl
     *width = qMax(1.0, ptToPx(f[1].toDouble() / 8.0));
     *space = ptToPx(f[2].toDouble());
     *color = QColor(QLatin1Char('#') + f[3]);
+    if (darkPaper)
+        *color = spell::SpellHighlighter::onDarkPaper(*color);
     return true;
 }
 
-void PageEdit::paintDecorations(QPainter &p, QTextDocument *doc, const QRectF &clip, bool showBreaks)
+void PageEdit::paintDecorations(QPainter &p, QTextDocument *doc, const QRectF &clip, bool showBreaks, bool darkPaper)
 {
     QAbstractTextDocumentLayout *layout = doc->documentLayout();
     const QTextFrameFormat rf = doc->rootFrame()->frameFormat();
@@ -145,27 +160,27 @@ void PageEdit::paintDecorations(QPainter &p, QTextDocument *doc, const QRectF &c
         if (r.bottom() >= clip.top() - 50 && r.top() <= clip.bottom() + 50) {
             QColor c;
             double w = 0, space = 0;
-            if (!leftSpec.isEmpty() && parseBorder(leftSpec, &c, &w, &space)) {
+            if (!leftSpec.isEmpty() && parseBorder(leftSpec, &c, &w, &space, darkPaper)) {
                 const bool joined = prevLeft == leftSpec && prevRect.isValid();
                 const double top = joined ? prevRect.bottom() : r.top() - 1;
                 const double x = contentLeft - space - w / 2.0;
                 p.fillRect(QRectF(x - w / 2.0, top, w, r.bottom() + 1 - top), c);
             }
             const QString rightSpec = bf.stringProperty(BorderRight);
-            if (!rightSpec.isEmpty() && parseBorder(rightSpec, &c, &w, &space))
+            if (!rightSpec.isEmpty() && parseBorder(rightSpec, &c, &w, &space, darkPaper))
                 p.fillRect(QRectF(contentRight + space, r.top() - 1, w, r.height() + 2), c);
             const QString topSpec = bf.stringProperty(BorderTop);
-            if (!topSpec.isEmpty() && parseBorder(topSpec, &c, &w, &space))
+            if (!topSpec.isEmpty() && parseBorder(topSpec, &c, &w, &space, darkPaper))
                 p.fillRect(QRectF(contentLeft, r.top() - space - w, contentRight - contentLeft, w), c);
             const QString bottomSpec = bf.stringProperty(BorderBottom);
-            if (!bottomSpec.isEmpty() && parseBorder(bottomSpec, &c, &w, &space))
+            if (!bottomSpec.isEmpty() && parseBorder(bottomSpec, &c, &w, &space, darkPaper))
                 p.fillRect(QRectF(contentLeft, r.bottom() + space, contentRight - contentLeft, w), c);
 
             if (showBreaks && (bf.pageBreakPolicy() & QTextFormat::PageBreak_AlwaysBefore) && b != doc->begin()) {
                 // Dashed rule in the gap above the paragraph, label out in the right margin.
                 const double gapTop = prevRect.isValid() ? prevRect.bottom() : r.top() - bf.topMargin();
                 const double y = (gapTop + r.top()) / 2.0;
-                p.setPen(QPen(QColor(0x9A, 0x9A, 0x9A), 1, Qt::DashLine));
+                p.setPen(QPen(darkPaper ? QColor(0x70, 0x70, 0x70) : QColor(0x9A, 0x9A, 0x9A), 1, Qt::DashLine));
                 p.drawLine(QPointF(rootLeft, y), QPointF(rootRight, y));
                 QFont f = p.font();
                 f.setPointSizeF(6.5);

@@ -3,6 +3,7 @@
 #include "docx/Units.h"
 #include "ui/MainWindow.h"
 #include "ui/PageEdit.h"
+#include "ui/Theme.h"
 
 #include <QAbstractTextDocumentLayout>
 #include <QApplication>
@@ -188,7 +189,11 @@ int main(int argc, char *argv[])
                                   QStringLiteral("Open [file] in the editor window and save a screenshot to <png>."),
                                   QStringLiteral("png"));
     QCommandLineOption viewOpt(QStringLiteral("view"), QStringLiteral("Start in <page|draft> view."), QStringLiteral("mode"));
-    parser.addOptions({roundtrip, render, pdf, dump, inspect, screenshot, viewOpt});
+    QCommandLineOption themeOpt(QStringLiteral("theme"), QStringLiteral("Use the <system|light|dark> theme (saved)."),
+                                QStringLiteral("theme"));
+    QCommandLineOption paperOpt(QStringLiteral("paper"), QStringLiteral("Use <white|dark> paper (saved)."),
+                                QStringLiteral("paper"));
+    parser.addOptions({roundtrip, render, pdf, dump, inspect, screenshot, viewOpt, themeOpt, paperOpt});
     parser.addPositionalArgument(QStringLiteral("files"), QStringLiteral("Document to open, or in/out for CLI modes."));
     parser.process(app);
     const QStringList pos = parser.positionalArguments();
@@ -210,6 +215,12 @@ int main(int argc, char *argv[])
 
     if (parser.isSet(viewOpt))
         QSettings().setValue(QStringLiteral("viewMode"), parser.value(viewOpt));
+    if (parser.isSet(themeOpt))
+        QSettings().setValue(QStringLiteral("theme"), theme::toString(theme::themeFromString(parser.value(themeOpt))));
+    if (parser.isSet(paperOpt))
+        QSettings().setValue(QStringLiteral("paper"), theme::toString(theme::paperFromString(parser.value(paperOpt))));
+    theme::captureSystem();
+    theme::apply(theme::themeFromString(QSettings().value(QStringLiteral("theme")).toString()));
     MainWindow w;
     w.show();
     if (!pos.isEmpty())

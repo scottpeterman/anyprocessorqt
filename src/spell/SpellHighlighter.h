@@ -1,12 +1,16 @@
 #pragma once
 
+#include <QColor>
 #include <QSyntaxHighlighter>
 
 namespace spell {
 
-// Red wavy underline under misspelled words. Display only: highlighter formats
-// live in the text layout, not the document, so they never reach the saved file
-// and don't touch undo or the modified flag.
+// Display-only formatting layered over the document:
+//  - red wavy underline under misspelled words;
+//  - on dark paper, readable ink for explicitly coloured text (dark colours are
+//    lightened; text on a light shading, highlight or cell fill keeps dark ink).
+// Highlighter formats live in the text layout, not the document, so they never
+// reach the saved file, print or PDF, and don't touch undo or the modified flag.
 class SpellHighlighter : public QSyntaxHighlighter {
     Q_OBJECT
 public:
@@ -17,8 +21,19 @@ public:
     // restores the flag afterwards.
     void recheck();
 
+    void setDarkPaper(bool dark);
+    bool darkPaper() const { return m_dark; }
+
+    // Colour to show for `c` drawn straight on dark paper: dark colours become a
+    // light tint of the same hue; colours already light enough are kept.
+    static QColor onDarkPaper(const QColor &c);
+
 protected:
     void highlightBlock(const QString &text) override;
+
+private:
+    void applyDarkPaperInk();
+    bool m_dark = false;
 };
 
 } // namespace spell

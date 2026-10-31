@@ -1,6 +1,7 @@
 #pragma once
 
 #include "docx/Package.h"
+#include "ui/Theme.h"
 
 #include <QTextEdit>
 
@@ -33,7 +34,13 @@ public:
     const docx::PageSetup &pageSetup() const { return m_page; }
     int pageWidthPx() const;
 
-    static void paintDecorations(QPainter &p, QTextDocument *doc, const QRectF &clip, bool showBreaks);
+    // Desk (around the page) and paper colours. Display only: the document's own
+    // colours are untouched, so save, print and PDF are unaffected.
+    void setColors(const QColor &desk, theme::Paper paper);
+    theme::Paper paper() const { return m_paper; }
+
+    static void paintDecorations(QPainter &p, QTextDocument *doc, const QRectF &clip, bool showBreaks,
+                                 bool darkPaper = false);
 
 protected:
     void paintEvent(QPaintEvent *e) override;
@@ -47,8 +54,11 @@ signals:
 
 private:
     void updateMargins();
+    void updatePalette();
     bool m_embedded = false;
     docx::PageSetup m_page;
     ViewMode m_mode = ViewMode::Page;
     spell::SpellHighlighter *m_spell = nullptr;
+    QColor m_desk = QColor(0xE6, 0xE6, 0xE6);
+    theme::Paper m_paper = theme::Paper::White;
 };
