@@ -24,6 +24,11 @@ public:
     // Select the next misspelled word after the cursor (wrapping once). False if none.
     bool selectNextMisspelling();
 
+    // Embedded in ZoomView: no scrollbars or desk margins of its own; the view
+    // scales, scrolls and centres it.
+    void setEmbedded(bool embedded);
+    bool isEmbedded() const { return m_embedded; }
+
     void setPageSetup(const docx::PageSetup &page);
     const docx::PageSetup &pageSetup() const { return m_page; }
     int pageWidthPx() const;
@@ -37,8 +42,12 @@ protected:
     void insertFromMimeData(const QMimeData *source) override;
     void contextMenuEvent(QContextMenuEvent *e) override;
 
+signals:
+    void geometryHintsChanged();  // view mode or page setup changed: the host should re-lay out
+
 private:
     void updateMargins();
+    bool m_embedded = false;
     docx::PageSetup m_page;
     ViewMode m_mode = ViewMode::Page;
     spell::SpellHighlighter *m_spell = nullptr;

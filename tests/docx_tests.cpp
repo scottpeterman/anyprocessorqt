@@ -13,6 +13,12 @@
 #include "spell/SpellHighlighter.h"
 #include "ui/PageEdit.h"
 #include "ui/FindBar.h"
+#include "ui/ZoomView.h"
+#include <QGraphicsProxyWidget>
+#include <QScrollBar>
+#include <QWheelEvent>
+#include <QMouseEvent>
+#include <QKeyEvent>
 #include "docx/CodeStyles.h"
 
 #include <QApplication>
@@ -704,6 +710,91 @@ static void codeTests(const QString &keepPath)
           "code block shading and rule");
 }
 
+static void zoomTests(const QString &file)
+{
+    auto *edit = new PageEdit;
+    ZoomView view(edit);
+    Package pkg;
+    QString err;
+    if (!DocxReader::loadFile(file, edit->document(), &pkg, &err)) {
+        CHECK(false, "zoom test doc loads");
+        return;
+    }
+    edit->setPageSetup(pkg.page);
+    view.resize(1600, 900);
+    view.show();
+    QApplication::processEvents();
+    QApplication::processEvents();
+    auto lineCounts = [&] {
+        QList<int> n;
+        for (QTextBlock b = edit->document()->begin(); b.isValid(); b = b.next())
+            n << (b.layout() ? b.layout()->lineCount() : 0);
+        return n;
+    };
+    view.setZoom(1.0);
+    QApplication::processEvents();
+    const QList<int> at100 = lineCounts();
+    view.setFitWidth();
+    QApplication::processEvents();
+    CHECK(view.zoom() > 1.5, qPrintable(QStringLiteral("fit width zooms in on a wide window (%1)").arg(view.zoom())));
+    CHECK(lineCounts() == at100, "line breaks identical at fit width and 100%");
+    view.setZoom(3.0);
+    QApplication::processEvents();
+    CHECK(lineCounts() == at100, "line breaks identical at 300%");
+    view.setFitWidth();
+    QApplication::processEvents();
+
+    // Click on a word through the scaled view: the cursor must land in it.
+    const QTextBlock target = findBlock(*edit->document(), QStringLiteral("Network Engineer"));
+    QTextCursor tc(target);
+    tc.setPosition(target.position() + 3);
+    const QRect cr = edit->cursorRect(tc);
+    view.ensureVisible(QRectF(QPointF(edit->viewport()->mapTo(edit, cr.topLeft())), QSizeF(2, cr.height())));
+    QApplication::processEvents();
+    auto *proxy = qgraphicsitem_cast<QGraphicsProxyWidget *>(view.items().value(0));
+    QPointF scenePt = QPointF(edit->viewport()->mapTo(edit, cr.center()));
+    if (proxy)
+        scenePt = proxy->mapToScene(scenePt);
+    const QPoint vp = view.mapFromScene(scenePt);
+    QMouseEvent press(QEvent::MouseButtonPress, QPointF(vp), view.viewport()->mapToGlobal(QPointF(vp)), Qt::LeftButton,
+                      Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent release(QEvent::MouseButtonRelease, QPointF(vp), view.viewport()->mapToGlobal(QPointF(vp)), Qt::LeftButton,
+                        Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &press);
+    QApplication::sendEvent(view.viewport(), &release);
+    QApplication::processEvents();
+    const int clicked = edit->textCursor().position() - target.position();
+    CHECK(clicked >= 2 && clicked <= 4, qPrintable(QStringLiteral("click maps through the zoom (offset %1, want ~3)").arg(clicked)));
+
+    // Typing goes into the document at that point.
+    QKeyEvent key(QEvent::KeyPress, Qt::Key_X, Qt::NoModifier, QStringLiteral("X"));
+    QApplication::sendEvent(edit, &key);
+    CHECK(target.text().startsWith(QLatin1String("NetXwork")) || target.text().startsWith(QLatin1String("NeXtwork"))
+              || target.text().startsWith(QLatin1String("NetwXork")),
+          qPrintable(QStringLiteral("typing lands at the click: %1").arg(target.text().left(12))));
+    edit->document()->undo();
+
+    // Wheel scrolls the page; PageDown pages by the visible height, not to the end.
+    QScrollBar *v = view.verticalScrollBar();
+    v->setValue(0);
+    QWheelEvent wheel(QPointF(400, 400), view.viewport()->mapToGlobal(QPointF(400, 400)), QPoint(), QPoint(0, -360),
+                      Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(view.viewport(), &wheel);
+    CHECK(v->value() > 0, "mouse wheel scrolls the zoomed page");
+    v->setValue(0);
+    QTextCursor home(edit->document());
+    edit->setTextCursor(home);
+    QKeyEvent pgdn(QEvent::KeyPress, Qt::Key_PageDown, Qt::NoModifier);
+    QApplication::sendEvent(edit, &pgdn);
+    QApplication::processEvents();
+    const int after = edit->textCursor().position();
+    CHECK(after > 0 && after < edit->document()->characterCount() - 50 && v->value() > 0,
+          qPrintable(QStringLiteral("PageDown moves one screen (pos %1 of %2)").arg(after).arg(edit->document()->characterCount())));
+
+    // Zooming and view switching leave the document alone.
+    CHECK(!edit->document()->isModified(), "zooming does not modify the document");
+}
+
 static void zipTests()
 {
     QByteArray big;
@@ -757,6 +848,8 @@ int main(int argc, char **argv)
         roundTripFile(f);
         if (f.endsWith(QLatin1String("features.docx")))
             viewTests(f);
+        if (f.endsWith(QLatin1String("resume.docx")))
+            zoomTests(f);
         if (f.endsWith(QLatin1String("features.docx")))
             fixtureChecks(f);
     }
