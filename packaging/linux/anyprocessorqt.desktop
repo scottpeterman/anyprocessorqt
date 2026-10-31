@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=anyprocessorqt
+GenericName=Word Processor
+Comment=Lightweight DOCX word processor
+Exec=anyprocessorqt %f
+Icon=anyprocessorqt
+Terminal=false
+Categories=Office;WordProcessor;
+MimeType=application/vnd.openxmlformats-officedocument.wordprocessingml.document;
+StartupWMClass=anyprocessorqt

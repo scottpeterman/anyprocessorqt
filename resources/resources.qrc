@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/icons">
+        <file alias="anyprocessorqt-32.png">../packaging/icons/anyprocessorqt-32.png</file>
+        <file alias="anyprocessorqt-64.png">../packaging/icons/anyprocessorqt-64.png</file>
+        <file alias="anyprocessorqt-256.png">../packaging/icons/anyprocessorqt-256.png</file>
+    </qresource>
+</RCC>
