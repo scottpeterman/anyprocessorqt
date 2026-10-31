@@ -7,6 +7,7 @@
 #include "ui/FindBar.h"
 #include "ui/InsertTableDialog.h"
 #include "ui/PageEdit.h"
+#include "ui/ZoomView.h"
 #include "spell/SpellChecker.h"
 
 #include <QAction>
@@ -39,6 +40,7 @@
 #include <QTextTable>
 #include <QTimer>
 #include <QToolBar>
+#include <QToolButton>
 #include <QUrl>
 #include <QUuid>
 #include <QVBoxLayout>
@@ -62,7 +64,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     auto *layout = new QVBoxLayout(central);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
-    layout->addWidget(m_edit, 1);
+    m_zoomView = new ZoomView(m_edit, central);
+    layout->addWidget(m_zoomView, 1);
     m_findBar = new FindBar(m_edit, central);
     layout->addWidget(m_findBar);
     setCentralWidget(central);
@@ -73,6 +76,22 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     m_wordCount = new QLabel(this);
     statusBar()->addPermanentWidget(m_wordCount);
+    m_zoomButton = new QToolButton(this);
+    m_zoomButton->setAutoRaise(true);
+    m_zoomButton->setPopupMode(QToolButton::InstantPopup);
+    m_zoomButton->setToolTip(tr("Zoom"));
+    {
+        auto *menu = new QMenu(m_zoomButton);
+        menu->addAction(m_zoomFit);
+        menu->addSeparator();
+        for (int pct : {50, 75, 100, 125, 150, 200, 300}) {
+            QAction *a = menu->addAction(QStringLiteral("%1%").arg(pct));
+            connect(a, &QAction::triggered, this, [this, pct] { m_zoomView->setZoom(pct / 100.0); });
+        }
+        m_zoomButton->setMenu(menu);
+    }
+    statusBar()->addPermanentWidget(m_zoomButton);
+    connect(m_zoomView, &ZoomView::zoomChanged, this, &MainWindow::updateZoomUi);
     m_countTimer = new QTimer(this);
     m_countTimer->setSingleShot(true);
     m_countTimer->setInterval(400);
@@ -105,10 +124,24 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         buildSpellingMenu(m_languageMenu);
         connect(&sc, &spell::SpellChecker::changed, this, [this] { buildSpellingMenu(m_languageMenu); });
         setDraftView(s.value(QStringLiteral("viewMode")).toString() == QLatin1String("draft"));
+        const QString z = s.value(QStringLiteral("zoom"), QStringLiteral("fit")).toString();
+        if (z == QLatin1String("fit"))
+            m_zoomView->setFitWidth();
+        else
+            m_zoomView->setZoom(z.toDouble());
+        updateZoomUi(m_zoomView->zoom(), m_zoomView->fitWidth());
     }
 
     resize(1100, 900);
     newDocument();
+}
+
+void MainWindow::updateZoomUi(double factor, bool fit)
+{
+    const int pct = int(qRound(factor * 100));
+    m_zoomButton->setText(fit ? tr("Page Width (%1%)").arg(pct) : QStringLiteral("%1%").arg(pct));
+    m_zoomFit->setChecked(fit);
+    QSettings().setValue(QStringLiteral("zoom"), fit ? QStringLiteral("fit") : QString::number(factor, 'g', 4));
 }
 
 void MainWindow::setDraftView(bool draft)
@@ -283,6 +316,14 @@ void MainWindow::buildActions()
     }
     m_pageView->setChecked(true);
 
+    m_zoomIn = mk(tr("Zoom &In"), QKeySequence::ZoomIn, [this] { m_zoomView->zoomIn(); }, "zoom-in");
+    m_zoomIn->setShortcuts({QKeySequence::ZoomIn, QKeySequence(Qt::CTRL | Qt::Key_Equal)});
+    m_zoomOut = mk(tr("Zoom &Out"), QKeySequence::ZoomOut, [this] { m_zoomView->zoomOut(); }, "zoom-out");
+    m_zoomFit = mk(tr("&Fit Page Width"), QKeySequence(Qt::CTRL | Qt::Key_0), [this] { m_zoomView->setFitWidth(); },
+                   "zoom-fit-width");
+    m_zoomFit->setCheckable(true);
+    m_zoom100 = mk(tr("&Actual Size (100%)"), QKeySequence(), [this] { m_zoomView->setZoom(1.0); }, "zoom-original");
+
     m_spellAsYouType = mk(tr("Check Spelling as You &Type"), QKeySequence(), [this] {
         spell::SpellChecker::instance().setEnabled(m_spellAsYouType->isChecked());
         QSettings().setValue(QStringLiteral("spellAsYouType"), m_spellAsYouType->isChecked());
@@ -319,6 +360,8 @@ void MainWindow::buildMenus()
 
     QMenu *view = menuBar()->addMenu(tr("&View"));
     view->addActions({m_pageView, m_draftView});
+    view->addSeparator();
+    view->addActions({m_zoomFit, m_zoom100, m_zoomIn, m_zoomOut});
 
     QMenu *format = menuBar()->addMenu(tr("F&ormat"));
     format->addActions({m_bold, m_italic, m_underline, m_strike, m_super, m_sub});

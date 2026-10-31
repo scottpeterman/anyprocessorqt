@@ -47,6 +47,15 @@ void PageEdit::setViewMode(ViewMode mode)
     setPalette(pal);
     updateMargins();
     ensureCursorVisible();
+    emit geometryHintsChanged();
+}
+
+void PageEdit::setEmbedded(bool embedded)
+{
+    m_embedded = embedded;
+    setVerticalScrollBarPolicy(embedded ? Qt::ScrollBarAlwaysOff : Qt::ScrollBarAsNeeded);
+    setHorizontalScrollBarPolicy(embedded ? Qt::ScrollBarAlwaysOff : Qt::ScrollBarAsNeeded);
+    updateMargins();
 }
 
 int PageEdit::pageWidthPx() const
@@ -58,12 +67,18 @@ void PageEdit::setPageSetup(const PageSetup &page)
 {
     m_page = page;
     updateMargins();
+    emit geometryHintsChanged();
 }
 
 void PageEdit::updateMargins()
 {
     const int sb = verticalScrollBar()->isVisible() ? verticalScrollBar()->width() : 0;
     const int avail = width() - sb;
+    if (m_mode == ViewMode::Page && m_embedded) {
+        setLineWrapColumnOrWidth(pageWidthPx());
+        setViewportMargins(0, 0, 0, 0);
+        return;
+    }
     if (m_mode == ViewMode::Page) {
         const int pw = pageWidthPx();
         setLineWrapColumnOrWidth(pw);

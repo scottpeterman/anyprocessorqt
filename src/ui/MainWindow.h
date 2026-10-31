@@ -69,6 +69,9 @@ private:
     docx::Package m_pkg;
     QString m_path;
     class FindBar *m_findBar = nullptr;
+    class ZoomView *m_zoomView = nullptr;
+    class QToolButton *m_zoomButton = nullptr;
+    void updateZoomUi(double factor, bool fit);
     int m_lastBlockCount = 0;
 
     QComboBox *m_styleCombo = nullptr;
@@ -88,5 +91,6 @@ private:
     QAction *m_rowAbove, *m_rowBelow, *m_colLeft, *m_colRight, *m_delRow, *m_delCol, *m_delTable, *m_merge, *m_split;
     QAction *m_about;
     QAction *m_pageView, *m_draftView, *m_spellAsYouType, *m_nextMisspelling;
+    QAction *m_zoomIn, *m_zoomOut, *m_zoomFit, *m_zoom100;
     QMenu *m_languageMenu = nullptr;
 };
