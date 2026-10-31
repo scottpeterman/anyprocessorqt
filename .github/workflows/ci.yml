@@ -20,7 +20,13 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build -j4
       - name: Test
-        run: ./build/anyprocessorqt_tests tests/fixtures/features.docx
+        run: |
+          set +e
+          ./build/anyprocessorqt_tests tests/fixtures/features.docx > test.log 2>&1
+          status=$?
+          cat test.log
+          [ $status -ne 0 ] && grep -E "FAIL|passed" test.log | sed 's/^/::error::/'
+          exit $status
       - name: CLI smoke
         run: |
           ./build/anyprocessorqt --roundtrip tests/fixtures/features.docx rt.docx
@@ -65,8 +71,12 @@ jobs:
       - name: Test
         shell: bash
         run: |
-          if [ -f build/Release/anyprocessorqt_tests.exe ]; then
-            ./build/Release/anyprocessorqt_tests.exe tests/fixtures/features.docx
-          else
-            ./build/anyprocessorqt_tests tests/fixtures/features.docx
-          fi
+          bin=./build/anyprocessorqt_tests
+          [ -f build/Release/anyprocessorqt_tests.exe ] && bin=./build/Release/anyprocessorqt_tests.exe
+          set +e
+          "$bin" tests/fixtures/features.docx > test.log 2>&1
+          status=$?
+          cat test.log
+          # Surface failures as annotations (readable on the run page without opening logs).
+          grep -E "FAIL|passed" test.log | sed 's/^/::error::/'
+          exit $status
