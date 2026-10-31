@@ -36,6 +36,7 @@ jobs:
             exit 1
           fi
 
+  # x86_64: Qt from the Qt installer, built on 22.04 (glibc 2.35 < bookworm's 2.36).
   linux:
     needs: meta
     strategy:
@@ -46,10 +47,6 @@ jobs:
             arch: x86_64
             qt_host: linux
             qt_arch: linux_gcc_64
-          - os: ubuntu-22.04-arm
-            arch: aarch64
-            qt_host: linux_arm64
-            qt_arch: linux_gcc_arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -64,6 +61,8 @@ jobs:
           host: ${{ matrix.qt_host }}
           arch: ${{ matrix.qt_arch }}
           cache: true
+      - name: Qt platform plugins
+        run: echo "::notice::platforms in $QT_ROOT_DIR/plugins/platforms -> $(ls "$QT_ROOT_DIR/plugins/platforms" | tr '\n' ' ')"
       - name: Build
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release > step.log 2>&1 || { cat step.log; grep -inE "error|missing|fail|cannot|not found|undefined" step.log | tail -n 8 | sed 's/^/::error::/'; tail -n 2 step.log | sed 's/^/::error::/'; exit 1; }
@@ -88,10 +87,46 @@ jobs:
           path: dist/*.AppImage
           if-no-files-found: error
 
+  # aarch64: the Qt installer's ARM64 Qt 6.10 needs glibc 2.38, which bookworm
+  # doesn't have, so build inside bookworm against Debian's own Qt (6.4.2).
+  linux-arm64:
+    needs: meta
+    runs-on: ubuntu-22.04-arm
+    container: debian:bookworm
+    env:
+      APPIMAGE_EXTRACT_AND_RUN: 1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential cmake qt6-base-dev qt6-base-dev-tools qt6-wayland libgl-dev libxkbcommon-dev curl file ca-certificates fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release > step.log 2>&1 || { cat step.log; grep -inE "error|missing|fail|cannot|not found|undefined" step.log | tail -n 8 | sed 's/^/::error::/'; exit 1; }
+          cmake --build build -j4 > step.log 2>&1 || { cat step.log; grep -inE "error|missing|fail|cannot|not found|undefined" step.log | tail -n 8 | sed 's/^/::error::/'; exit 1; }
+      - name: Test
+        run: ./build/anyprocessorqt_tests tests/fixtures/features.docx
+      - name: AppImage
+        run: |
+          bash packaging/linux/bundle-appimage.sh build dist > step.log 2>&1 || { cat step.log; grep -inE "error|missing|fail|cannot|not found|undefined" step.log | tail -n 8 | sed 's/^/::error::/'; tail -n 2 step.log | sed 's/^/::error::/'; exit 1; }
+          cat step.log
+      - name: Smoke test AppImage
+        run: |
+          app=$(ls dist/*.AppImage)
+          "$app" --appimage-extract-and-run --roundtrip tests/fixtures/features.docx rt.docx
+          "$app" --appimage-extract-and-run --pdf rt.docx rt.pdf
+          test -s rt.pdf
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-aarch64
+          path: dist/*.AppImage
+          if-no-files-found: error
+
   # Stock Debian bookworm, the base of the ChromeOS Linux container. No Qt and no
   # xcb-cursor installed: everything must come from the AppImage.
   bookworm:
-    needs: linux
+    needs: [linux, linux-arm64]
     strategy:
       fail-fast: false
       matrix:
@@ -210,7 +245,7 @@ jobs:
 
   release:
     if: github.ref_type == 'tag'
-    needs: [meta, linux, bookworm, macos, windows]
+    needs: [meta, linux, linux-arm64, bookworm, macos, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

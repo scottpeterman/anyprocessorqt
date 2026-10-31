@@ -54,8 +54,18 @@ export LD_LIBRARY_PATH="$QT_LIBS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 rm -rf "$APPDIR"
 DESTDIR="$APPDIR" cmake --install "$BUILD_DIR" --prefix /usr
 
-# Platform plugins beyond xcb: Wayland (ChromeOS, modern desktops) and offscreen (CLI modes).
-export EXTRA_PLATFORM_PLUGINS="libqwayland-egl.so;libqwayland-generic.so;libqoffscreen.so"
+# Platform plugins beyond xcb: Wayland (ChromeOS, modern desktops) and offscreen
+# (CLI modes). Plugin file names vary across Qt versions, so take what exists.
+EXTRA=()
+for p in "$QT_PLUGINS"/platforms/libqwayland*.so "$QT_PLUGINS"/platforms/libqoffscreen.so; do
+    [ -e "$p" ] && EXTRA+=("$(basename "$p")")
+done
+echo "extra platform plugins: ${EXTRA[*]:-none}"
+if ! printf '%s\n' "${EXTRA[@]}" | grep -q '^libqwayland'; then
+    echo "no Wayland platform plugin in $QT_PLUGINS/platforms; install the Qt Wayland module" >&2
+    exit 1
+fi
+export EXTRA_PLATFORM_PLUGINS="$(IFS=';'; echo "${EXTRA[*]}")"
 export EXTRA_QT_MODULES="waylandclient"
 
 "$TOOLS/linuxdeploy-$ARCH.AppImage" --appdir "$APPDIR" --desktop-file "$APPDIR/usr/share/applications/anyprocessorqt.desktop" --icon-file "$SRC_DIR/packaging/icons/anyprocessorqt-256.png" --icon-filename anyprocessorqt --plugin qt
@@ -106,7 +116,7 @@ need() {
     fi
 }
 need "usr/plugins/platforms/libqxcb.so"
-need "usr/plugins/platforms/libqwayland-generic.so"
+need "usr/plugins/platforms/libqwayland*.so"
 need "usr/plugins/platforms/libqoffscreen.so"
 need "usr/plugins/wayland-shell-integration/libxdg-shell.so"
 if [ "$NEED_XCB_CURSOR" -eq 1 ]; then
