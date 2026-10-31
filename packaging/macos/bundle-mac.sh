@@ -44,7 +44,8 @@ fail=0
 [ -f "$APP/Contents/PlugIns/platforms/libqcocoa.dylib" ] || { echo "MISSING libqcocoa.dylib" >&2; fail=1; }
 # Qt references must be @rpath/@executable_path; @rpath is fine because the
 # framework is inside Contents/Frameworks (macdeployqt in Qt 6.10 leaves @rpath).
-if otool -L "$BIN" | grep -i 'qt' | grep -vE '@rpath|@executable_path|@loader_path' ; then
+# (skip line 1: it is the binary's own path, which contains "qt")
+if otool -L "$BIN" | tail -n +2 | grep -E 'Qt[A-Za-z0-9]*\.framework' | grep -vE '@rpath|@executable_path|@loader_path' ; then
     echo "absolute Qt references remain" >&2
     fail=1
 fi

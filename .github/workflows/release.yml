@@ -66,12 +66,16 @@ jobs:
           cache: true
       - name: Build
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build -j4
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release > step.log 2>&1 || { cat step.log; grep -inE "error|missing|fail|cannot|not found|undefined" step.log | tail -n 8 | sed 's/^/::error::/'; tail -n 2 step.log | sed 's/^/::error::/'; exit 1; }
+          cat step.log
+          cmake --build build -j4 > step.log 2>&1 || { cat step.log; grep -inE "error|missing|fail|cannot|not found|undefined" step.log | tail -n 8 | sed 's/^/::error::/'; tail -n 2 step.log | sed 's/^/::error::/'; exit 1; }
+          cat step.log
       - name: Test
         run: ./build/anyprocessorqt_tests tests/fixtures/features.docx
       - name: AppImage
-        run: bash packaging/linux/bundle-appimage.sh build dist
+        run: |
+          bash packaging/linux/bundle-appimage.sh build dist > step.log 2>&1 || { cat step.log; grep -inE "error|missing|fail|cannot|not found|undefined" step.log | tail -n 8 | sed 's/^/::error::/'; tail -n 2 step.log | sed 's/^/::error::/'; exit 1; }
+          cat step.log
       - name: Smoke test AppImage
         run: |
           app=$(ls dist/*.AppImage)
@@ -154,7 +158,9 @@ jobs:
       - name: Test
         run: ./build/anyprocessorqt_tests tests/fixtures/features.docx
       - name: DMG
-        run: bash packaging/macos/bundle-mac.sh build dist
+        run: |
+          bash packaging/macos/bundle-mac.sh build dist > step.log 2>&1 || { cat step.log; grep -inE "error|missing|fail|cannot|not found|undefined" step.log | tail -n 8 | sed 's/^/::error::/'; tail -n 2 step.log | sed 's/^/::error::/'; exit 1; }
+          cat step.log
       - name: Smoke test bundle
         run: |
           ./build/macstage/anyprocessorqt.app/Contents/MacOS/anyprocessorqt --roundtrip tests/fixtures/features.docx rt.docx
