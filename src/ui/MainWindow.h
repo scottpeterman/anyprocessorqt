@@ -66,6 +66,8 @@ private:
     void setPaper(int paper);   // theme::Paper
     void refreshColors();
     void buildSpellingMenu(QMenu *menu);
+    void buildRecentMenu();
+    void openRecent(const QString &path);
 
     void updateFormatUi();
     void updateWordCount();
@@ -104,4 +106,5 @@ private:
     QAction *m_themeSystem, *m_themeLight, *m_themeDark, *m_paperWhite, *m_paperDark;
     bool m_refreshingColors = false;
     QMenu *m_languageMenu = nullptr;
+    QMenu *m_recentMenu = nullptr;
 };

@@ -13,6 +13,7 @@
 #include "spell/SpellHighlighter.h"
 #include "ui/PageEdit.h"
 #include "ui/Theme.h"
+#include "ui/RecentFiles.h"
 #include "ui/HeaderFooterDialog.h"
 #include "docx/HeaderFooter.h"
 #include <QPdfWriter>
@@ -871,6 +872,26 @@ static void headerFooterTests(const QString &file)
           "titlePg inserted before docGrid");
 }
 
+static void recentTests()
+{
+    QStringList l;
+    for (int i = 0; i < 12; ++i)
+        l = recent::pushed(l, QStringLiteral("/docs/f%1.docx").arg(i));
+    CHECK(l.size() == recent::kMax && l.first() == QLatin1String("/docs/f11.docx"), "recent list capped, newest first");
+    l = recent::pushed(l, QStringLiteral("/docs/f5.docx"));
+    CHECK(l.first() == QLatin1String("/docs/f5.docx") && l.count(QStringLiteral("/docs/f5.docx")) == 1,
+          "reopening moves a file to the top without duplicating it");
+    l = recent::pushed(l, QStringLiteral("/docs/sub/../f5.docx"));
+    CHECK(l.count(QStringLiteral("/docs/f5.docx")) == 1, "paths normalised");
+    recent::clear();
+    recent::add(QStringLiteral("/tmp/a.docx"));
+    recent::add(QStringLiteral("/tmp/b.docx"));
+    recent::remove(QStringLiteral("/tmp/a.docx"));
+    CHECK(recent::load() == QStringList{QStringLiteral("/tmp/b.docx")}, "recent list persists add/remove");
+    recent::clear();
+    CHECK(recent::load().isEmpty(), "clear list");
+}
+
 static void spellMenuTest()
 {
     PageEdit edit;
@@ -1167,6 +1188,7 @@ int main(int argc, char **argv)
     }
     spellTests();
     spellMenuTest();
+    recentTests();
     paperTests();
     findReplaceTests();
     codeTests(keep.isEmpty() ? QString() : keep + QStringLiteral(".code.docx"));
