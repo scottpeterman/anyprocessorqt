@@ -53,7 +53,7 @@ jobs:
       - name: Build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl-dev libegl1 libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-xinput0 libwayland-client0 libwayland-cursor0 libwayland-egl1 libfontconfig1 fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2 file
+          sudo apt-get install -y libgl-dev libegl1 libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-xinput0 libwayland-client0 libwayland-cursor0 libwayland-egl1 libopengl0 libfontconfig1 fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2 file
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
@@ -100,7 +100,7 @@ jobs:
       - name: Build dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends build-essential cmake qt6-base-dev qt6-base-dev-tools qt6-wayland libgl-dev libxkbcommon-dev curl file ca-certificates fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2
+          apt-get install -y --no-install-recommends build-essential cmake qt6-base-dev qt6-base-dev-tools qt6-wayland libgl-dev libopengl0 libxkbcommon-dev curl file ca-certificates fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2
       - name: Build
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release > step.log 2>&1 || { cat step.log; grep -inE "error|missing|fail|cannot|not found|undefined" step.log | tail -n 8 | sed 's/^/::error::/'; exit 1; }
@@ -147,6 +147,18 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends xvfb xauth weston libgl1 libegl1 fontconfig fonts-crosextra-carlito
+      - name: Missing libraries sweep
+        run: |
+          app=$(ls dist/*.AppImage)
+          chmod +x "$app"
+          (cd /tmp && "$OLDPWD/$app" --appimage-extract > /dev/null)
+          root=/tmp/squashfs-root
+          missing=$(find "$root/usr/bin" "$root/usr/lib" "$root/usr/plugins" -type f \( -name '*.so*' -o -perm -u+x \) -print0 | xargs -0 -n1 env LD_LIBRARY_PATH="$root/usr/lib:$root/usr/lib/gl-fallback" ldd 2>/dev/null | grep 'not found' | sort -u)
+          if [ -n "$missing" ]; then
+            echo "$missing" | sed 's/^/::warning::host must provide /'
+          else
+            echo "::notice::every bundled binary resolves on stock bookworm"
+          fi
       - name: X11 (xcb)
         run: |
           app=$(ls dist/*.AppImage)

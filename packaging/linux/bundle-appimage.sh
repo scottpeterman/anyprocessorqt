@@ -99,6 +99,26 @@ if [ "$NEED_XCB_CURSOR" -eq 1 ] && ! compgen -G "$APPDIR/usr/lib/libxcb-cursor.s
     cp -L "$src" "$APPDIR/usr/lib/libxcb-cursor.so.0"
 fi
 
+# Qt's libQt6Gui links libOpenGL.so.0 (GLVND). linuxdeploy never bundles GL
+# libraries, and a minimal Debian/ChromeOS container may lack libopengl0. Ship a
+# fallback copy outside usr/lib and only put it on the library path, via an
+# AppRun hook, when the host doesn't have one.
+gl_src="$(ldconfig -p | awk '/libOpenGL\.so\.0 /{print $NF; exit}')"
+if [ -z "$gl_src" ]; then
+    echo "libOpenGL.so.0 not installed on the build host (apt install libopengl0)" >&2
+    exit 1
+fi
+mkdir -p "$APPDIR/usr/lib/gl-fallback" "$APPDIR/apprun-hooks"
+cp -L "$gl_src" "$APPDIR/usr/lib/gl-fallback/libOpenGL.so.0"
+cat > "$APPDIR/apprun-hooks/anyprocessorqt-gl-fallback.sh" <<'HOOK'
+# Use the host's libOpenGL.so.0 when present; otherwise the copy in the AppImage.
+_ldconfig="$(command -v ldconfig || echo /sbin/ldconfig)"
+if ! "$_ldconfig" -p 2>/dev/null | grep -q 'libOpenGL\.so\.0 '; then
+    export LD_LIBRARY_PATH="$APPDIR/usr/lib/gl-fallback${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+unset _ldconfig
+HOOK
+
 # Second pass: pull in dependencies of anything added above, then write the AppImage.
 OUTPUT_NAME="anyprocessorqt-$VERSION-$ARCH.AppImage"
 export LDAI_OUTPUT="$OUT_DIR/$OUTPUT_NAME"
@@ -123,6 +143,8 @@ if [ "$NEED_XCB_CURSOR" -eq 1 ]; then
     need "usr/lib/libxcb-cursor.so.0*"
 fi
 need "usr/lib/libQt6WaylandClient.so.6*"
+need "usr/lib/gl-fallback/libOpenGL.so.0"
+need "apprun-hooks/anyprocessorqt-gl-fallback.sh"
 if [ "$fail" -ne 0 ]; then
     echo "AppImage is incomplete" >&2
     exit 1
