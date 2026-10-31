@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.19)
 
-project(anyprocessorqt VERSION 0.1.0 LANGUAGES CXX)
+project(anyprocessorqt VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -15,6 +15,29 @@ endif()
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets PrintSupport)
 
 option(ANYPROCESSORQT_BUILD_TESTS "Build the headless DOCX test runner" ON)
+
+# Hunspell, vendored (third_party/README.md), built static.
+file(GLOB HUNSPELL_SOURCES CONFIGURE_DEPENDS third_party/hunspell/src/*.cxx)
+add_library(hunspell_static STATIC ${HUNSPELL_SOURCES})
+target_include_directories(hunspell_static PUBLIC third_party/hunspell/src)
+target_compile_definitions(hunspell_static PUBLIC HUNSPELL_STATIC PRIVATE BUILDING_LIBHUNSPELL)
+set_target_properties(hunspell_static PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(MSVC)
+    target_compile_options(hunspell_static PRIVATE /W0 /wd4244 /wd4267)
+else()
+    target_compile_options(hunspell_static PRIVATE -w)
+endif()
+
+# Spell checking: Hunspell wrapper and as-you-type highlighter (no widgets).
+add_library(anyprocessor_spell STATIC
+    src/spell/SpellChecker.cpp
+    src/spell/SpellChecker.h
+    src/spell/SpellHighlighter.cpp
+    src/spell/SpellHighlighter.h
+    resources/dictionaries.qrc
+)
+target_include_directories(anyprocessor_spell PUBLIC src)
+target_link_libraries(anyprocessor_spell PUBLIC Qt6::Core Qt6::Gui PRIVATE hunspell_static)
 
 # DOCX/zip core: no widgets, shared by the app and the tests.
 add_library(anyprocessor_core STATIC
@@ -61,7 +84,7 @@ add_executable(anyprocessorqt
     src/ui/InsertTableDialog.h
 )
 target_compile_definitions(anyprocessorqt PRIVATE ANYPROCESSORQT_VERSION="${PROJECT_VERSION}")
-target_link_libraries(anyprocessorqt PRIVATE anyprocessor_core Qt6::Widgets Qt6::PrintSupport)
+target_link_libraries(anyprocessorqt PRIVATE anyprocessor_core anyprocessor_spell Qt6::Widgets Qt6::PrintSupport)
 
 if(WIN32)
     set_target_properties(anyprocessorqt PROPERTIES WIN32_EXECUTABLE ON)
@@ -76,8 +99,8 @@ elseif(APPLE)
 endif()
 
 if(ANYPROCESSORQT_BUILD_TESTS)
-    add_executable(anyprocessorqt_tests tests/docx_tests.cpp)
-    target_link_libraries(anyprocessorqt_tests PRIVATE anyprocessor_core)
+    add_executable(anyprocessorqt_tests tests/docx_tests.cpp src/ui/PageEdit.cpp src/ui/PageEdit.h)
+    target_link_libraries(anyprocessorqt_tests PRIVATE anyprocessor_core anyprocessor_spell Qt6::Widgets)
 endif()
 
 install(TARGETS anyprocessorqt RUNTIME DESTINATION bin BUNDLE DESTINATION .)

@@ -5,6 +5,7 @@
 #include "docx/Units.h"
 #include "ui/InsertTableDialog.h"
 #include "ui/PageEdit.h"
+#include "spell/SpellChecker.h"
 
 #include <QAction>
 #include <QActionGroup>
@@ -18,6 +19,7 @@
 #include <QImageReader>
 #include <QInputDialog>
 #include <QLabel>
+#include <QLocale>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPageLayout>
@@ -73,8 +75,52 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     connect(m_edit->document(), &QTextDocument::undoAvailable, m_undo, &QAction::setEnabled);
     connect(m_edit->document(), &QTextDocument::redoAvailable, m_redo, &QAction::setEnabled);
 
+    // Spelling: saved language, else the system locale, else bundled US English.
+    {
+        QSettings s;
+        spell::SpellChecker &sc = spell::SpellChecker::instance();
+        sc.setEnabled(s.value(QStringLiteral("spellAsYouType"), true).toBool());
+        const QString want = s.value(QStringLiteral("spellLanguage"), QLocale::system().name()).toString();
+        if (!sc.setLanguage(want))
+            sc.setLanguage(QStringLiteral("en_US"));
+        m_spellAsYouType->setChecked(sc.isEnabled());
+        buildSpellingMenu(m_languageMenu);
+        connect(&sc, &spell::SpellChecker::changed, this, [this] { buildSpellingMenu(m_languageMenu); });
+        setDraftView(s.value(QStringLiteral("viewMode")).toString() == QLatin1String("draft"));
+    }
+
     resize(1100, 900);
     newDocument();
+}
+
+void MainWindow::setDraftView(bool draft)
+{
+    m_edit->setViewMode(draft ? PageEdit::ViewMode::Draft : PageEdit::ViewMode::Page);
+    (draft ? m_draftView : m_pageView)->setChecked(true);
+    QSettings().setValue(QStringLiteral("viewMode"), draft ? QStringLiteral("draft") : QStringLiteral("page"));
+}
+
+void MainWindow::buildSpellingMenu(QMenu *menu)
+{
+    menu->clear();
+    spell::SpellChecker &sc = spell::SpellChecker::instance();
+    auto *group = new QActionGroup(menu);
+    for (const spell::Dictionary &d : sc.availableDictionaries()) {
+        const QLocale loc(d.code);
+        QString label = d.code;
+        if (loc.language() != QLocale::C)
+            label = QStringLiteral("%1 (%2)").arg(QLocale::languageToString(loc.language()),
+                                                  QLocale::territoryToString(loc.territory()));
+        QAction *a = menu->addAction(label);
+        a->setCheckable(true);
+        a->setChecked(d.code == sc.language());
+        group->addAction(a);
+        const QString code = d.code;
+        connect(a, &QAction::triggered, this, [code] {
+            if (spell::SpellChecker::instance().setLanguage(code))
+                QSettings().setValue(QStringLiteral("spellLanguage"), code);
+        });
+    }
 }
 
 // ------------------------------------------------------------------ actions
@@ -204,6 +250,26 @@ void MainWindow::buildActions()
         if (QTextTable *t = table()) { const auto c = t->cellAt(m_edit->textCursor()); t->splitCell(c.row(), c.column(), 1, 1); }
     });
 
+    m_pageView = mk(tr("&Page View"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_P), [this] { setDraftView(false); });
+    m_draftView = mk(tr("&Draft View (full width)"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_N),
+                     [this] { setDraftView(true); });
+    auto *viewGroup = new QActionGroup(this);
+    for (QAction *a : {m_pageView, m_draftView}) {
+        a->setCheckable(true);
+        viewGroup->addAction(a);
+    }
+    m_pageView->setChecked(true);
+
+    m_spellAsYouType = mk(tr("Check Spelling as You &Type"), QKeySequence(), [this] {
+        spell::SpellChecker::instance().setEnabled(m_spellAsYouType->isChecked());
+        QSettings().setValue(QStringLiteral("spellAsYouType"), m_spellAsYouType->isChecked());
+    }, "tools-check-spelling");
+    m_spellAsYouType->setCheckable(true);
+    m_nextMisspelling = mk(tr("&Next Misspelling"), QKeySequence(Qt::Key_F7), [this] {
+        if (!m_edit->selectNextMisspelling())
+            statusBar()->showMessage(tr("No misspellings found"), 3000);
+    });
+
     m_about = mk(tr("&About anyprocessorqt"), QKeySequence(), [this] {
         QMessageBox::about(this, tr("About anyprocessorqt"),
                            tr("<b>anyprocessorqt %1</b><br>A lightweight DOCX word processor in Qt.<br><br>"
@@ -227,6 +293,9 @@ void MainWindow::buildMenus()
     edit->addActions({m_cut, m_copy, m_paste, m_selectAll});
     edit->addSeparator();
     edit->addActions({m_find, m_findNext});
+
+    QMenu *view = menuBar()->addMenu(tr("&View"));
+    view->addActions({m_pageView, m_draftView});
 
     QMenu *format = menuBar()->addMenu(tr("F&ormat"));
     format->addActions({m_bold, m_italic, m_underline, m_strike, m_super, m_sub});
@@ -255,6 +324,10 @@ void MainWindow::buildMenus()
     table->addActions({m_delRow, m_delCol, m_delTable});
     table->addSeparator();
     table->addActions({m_merge, m_split});
+
+    QMenu *tools = menuBar()->addMenu(tr("T&ools"));
+    tools->addActions({m_spellAsYouType, m_nextMisspelling});
+    m_languageMenu = tools->addMenu(tr("Spelling &Language"));
 
     QMenu *help = menuBar()->addMenu(tr("&Help"));
     help->addAction(m_about);

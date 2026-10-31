@@ -19,6 +19,7 @@
 #include <QTextDocument>
 #include <QTextList>
 #include <QTextStream>
+#include <QSettings>
 #include <QTimer>
 
 #include <cstdio>
@@ -185,7 +186,8 @@ int main(int argc, char *argv[])
     QCommandLineOption screenshot(QStringLiteral("screenshot"),
                                   QStringLiteral("Open [file] in the editor window and save a screenshot to <png>."),
                                   QStringLiteral("png"));
-    parser.addOptions({roundtrip, render, pdf, dump, inspect, screenshot});
+    QCommandLineOption viewOpt(QStringLiteral("view"), QStringLiteral("Start in <page|draft> view."), QStringLiteral("mode"));
+    parser.addOptions({roundtrip, render, pdf, dump, inspect, screenshot, viewOpt});
     parser.addPositionalArgument(QStringLiteral("files"), QStringLiteral("Document to open, or in/out for CLI modes."));
     parser.process(app);
     const QStringList pos = parser.positionalArguments();
@@ -205,6 +207,8 @@ int main(int argc, char *argv[])
         return parser.isSet(dump) ? cliDump(pos[0]) : cliInspect(pos[0]);
     }
 
+    if (parser.isSet(viewOpt))
+        QSettings().setValue(QStringLiteral("viewMode"), parser.value(viewOpt));
     MainWindow w;
     w.show();
     if (!pos.isEmpty())

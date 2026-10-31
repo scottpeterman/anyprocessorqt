@@ -11,6 +11,7 @@ class QAction;
 class QComboBox;
 class QFontComboBox;
 class QLabel;
+class QMenu;
 class QTimer;
 
 class MainWindow : public QMainWindow {
@@ -57,6 +58,9 @@ private:
     void find();
     void findNext();
 
+    void setDraftView(bool draft);
+    void buildSpellingMenu(QMenu *menu);
+
     void updateFormatUi();
     void updateWordCount();
 
@@ -80,4 +84,6 @@ private:
     QAction *m_insImage, *m_resizeImage, *m_insTable, *m_insBreak, *m_insLink;
     QAction *m_rowAbove, *m_rowBelow, *m_colLeft, *m_colRight, *m_delRow, *m_delCol, *m_delTable, *m_merge, *m_split;
     QAction *m_about;
+    QAction *m_pageView, *m_draftView, *m_spellAsYouType, *m_nextMisspelling;
+    QMenu *m_languageMenu = nullptr;
 };

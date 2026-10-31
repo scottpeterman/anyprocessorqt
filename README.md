@@ -16,6 +16,8 @@ v0.1.0 — early. It opens, edits and saves real Word documents. Round-trip test
 - **Tables:** insert, add/remove rows and columns, merge/split cells; horizontal and vertical merges, cell shading and borders survive round-trips
 - **Images:** insert or paste PNG/JPEG/GIF/BMP/WebP, resize by % of text width; original image bytes are kept untouched on save
 - **Hyperlinks:** external links and internal anchors
+- **Views:** Page view (the page at its real width) and Draft view (text wraps to the full window for writing); switching never touches the document
+- **Spelling:** check as you type with suggestions, Add to Dictionary and Ignore All on right-click, F7 for the next misspelling. Built-in US English plus any Hunspell dictionaries installed on the system. Acronyms (BGP), mixed-case names (NetBox), words with digits, URLs, paths and file names are skipped, and a built-in list covers common network and software terms
 - **Output:** save `.docx`, export PDF (paginated), print
 - **Fonts:** Calibri, Cambria, Arial, Times New Roman and Courier New fall back to metric-compatible open fonts (Carlito, Caladea, Liberation) when the Microsoft fonts aren't installed, so line breaks match Word. Georgia maps to Gelasio when it's installed.
 
@@ -75,7 +77,7 @@ Unzip anywhere and run `anyprocessorqt.exe`.
 
 ## Build
 
-Requirements: CMake ≥ 3.19, a C++17 compiler, Qt ≥ 6.4 (Core, Gui, Widgets, PrintSupport). No other libraries — the zip reader/writer is built in.
+Requirements: CMake ≥ 3.19, a C++17 compiler, Qt ≥ 6.4 (Core, Gui, Widgets, PrintSupport). No other libraries: the zip reader/writer is built in, and Hunspell and its English dictionary are vendored in `third_party/` (see `third_party/README.md` for versions and licenses).
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -109,6 +111,18 @@ anyprocessorqt --dump in.docx                 # parsed document as Qt HTML
 anyprocessorqt --screenshot out.png in.docx   # editor window screenshot
 ```
 
+## Spelling
+
+The personal dictionary is a plain text file, one word per line:
+
+| Platform | Location |
+|---|---|
+| Linux / ChromeOS | `~/.local/share/anyprocessorqt/anyprocessorqt/personal-dictionary.txt` |
+| macOS | `~/Library/Application Support/anyprocessorqt/anyprocessorqt/personal-dictionary.txt` |
+| Windows | `%APPDATA%\anyprocessorqt\anyprocessorqt\personal-dictionary.txt` |
+
+Other languages: install a Hunspell dictionary (`sudo apt install hunspell-de-de`, for example) or drop a `.aff`/`.dic` pair into the app data `dictionaries` folder, then pick it under Tools → Spelling Language.
+
 ## Tests
 
 ```bash
@@ -121,7 +135,8 @@ Builds a document the way the editor does (styles, lists, nested levels, tables 
 
 - Page view with visible page boundaries (PDF export already paginates)
 - Header/footer display and editing
-- Find and replace dialog, spell check
+- Find and replace dialog
+- More bundled spelling dictionaries
 - Table properties dialog (borders, widths, alignment)
 
 ## Releasing
