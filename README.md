@@ -18,8 +18,8 @@ v0.1.0 — early. It opens, edits and saves real Word documents. Round-trip test
 - **Find & Replace:** Ctrl+F / Ctrl+H open a bar under the editor with Match case, Whole words, Previous/Next (Shift+F3 / F3), Replace and Replace All; matches are counted and highlighted. Replacements keep the replaced text's formatting, and Replace All is one undo step
 - **Images:** insert or paste PNG/JPEG/GIF/BMP/WebP, resize by % of text width; original image bytes are kept untouched on save
 - **Hyperlinks:** external links and internal anchors
-- **Views:** Page view (the page exactly as it prints) and Draft view (text wraps to the full window). Zoom scales the page without moving a single line break: Fit Page Width (Ctrl+0, the default) fills the window, Ctrl+= / Ctrl+- and Ctrl+wheel step through 50–400%, and the zoom button in the status bar has presets. Switching views or zooming never touches the document
-- **Theme and paper:** View → Theme sets the app to System, Light or Dark; View → Paper sets White or Dark paper, independently, so dark paper works with either theme. On dark paper, dark text colors (black, theme-colored headings, links) are lightened on screen, and text on a highlight, shading or light cell fill keeps dark ink. Display only: save, print and PDF use the document's real colors on white
+- **Views:** Page view (separate sheets, paginated exactly as print and PDF: same page breaks, same lines on each page; the status bar shows "Page N of M") and Draft view (text wraps to the full window). Zoom scales the page without moving a single line break: Fit Page Width (Ctrl+0, the default) fills the window, Ctrl+= / Ctrl+- and Ctrl+wheel step through 50–400%, and the zoom button in the status bar has presets. Switching views or zooming never touches the document
+- **Theme and paper:** View → Theme sets the app to System, Light or Dark; View → Paper sets White or Dark paper, independently, so dark paper works with either theme. On dark paper, dark text colors (black, theme-colored headings, links) are lightened on screen, light gray shading (code blocks, inline code) turns into a dark card, and text on other highlights, shading or light cell fills keeps dark ink. Display only: save, print and PDF use the document's real colors on white
 - **Spelling:** check as you type with suggestions, Add to Dictionary and Ignore All on right-click, F7 for the next misspelling. Built-in US English plus any Hunspell dictionaries installed on the system. Acronyms (BGP), mixed-case names (NetBox), words with digits, URLs, paths and file names are skipped, and a built-in list covers common network and software terms
 - **Output:** save `.docx`, export PDF (paginated), print
 - **Fonts:** Calibri, Cambria, Arial, Times New Roman and Courier New fall back to metric-compatible open fonts (Carlito, Caladea, Liberation) when the Microsoft fonts aren't installed, so line breaks match Word. Georgia maps to Gelasio when it's installed.
@@ -142,7 +142,6 @@ Builds a document the way the editor does (styles, lists, nested levels, tables 
 
 ## Roadmap
 
-- Page view with visible page boundaries (PDF export already paginates)
 - Header/footer display and editing
 - Regular-expression search
 - More bundled spelling dictionaries

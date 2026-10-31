@@ -10,6 +10,8 @@
 #include <QTimer>
 #include <QWheelEvent>
 
+#include <cmath>
+
 namespace {
 constexpr int kDesk = 24;  // grey margin around the page, in view pixels
 const double kSteps[] = {0.5, 0.67, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0};
@@ -75,12 +77,23 @@ void ZoomView::relayout()
 
     // Editor height = whole document, at least the visible area.
     m_edit->setFixedWidth(editW);
-    m_edit->document()->setTextWidth(editW);
-    const int docH = int(m_edit->document()->documentLayout()->documentSize().height()) + 2;
-    const int minH = int((vp.height() - 2 * kDesk) / z);
+    m_edit->setDocumentWidth(editW);
+    const bool paged = m_edit->viewMode() == PageEdit::ViewMode::Page;
+    QTextDocument *doc = m_edit->document();
+    const int contentH = int(std::ceil(doc->documentLayout()->documentSize().height()));
+    const int docH = paged ? qMax(contentH, doc->pageCount() * m_edit->pageHeightPx())  // whole sheets
+                           : contentH + 2;
+    // Page view ends at the last sheet; Draft fills the window.
+    const int minH = paged ? 0 : int((vp.height() - 2 * kDesk) / z);
     m_edit->setFixedHeight(qMax(docH, minH));
+    // The editor is as tall as its content, so it must never scroll itself.
+    m_edit->verticalScrollBar()->setValue(0);
     const double desk = kDesk / z;
     scene()->setSceneRect(QRectF(-desk, -desk, editW + 2 * desk, m_edit->height() + 2 * desk));
+    if (m_pendingTop) {
+        m_pendingTop = false;
+        verticalScrollBar()->setValue(verticalScrollBar()->minimum());
+    }
     if (changed)
         emit zoomChanged(m_zoom, m_fit);
 }
@@ -120,6 +133,12 @@ void ZoomView::zoomOut()
             return;
         }
     setZoom(kMin);
+}
+
+void ZoomView::scrollToTop()
+{
+    m_pendingTop = true;
+    m_relayout->start();
 }
 
 void ZoomView::setDeskColor(const QColor &c)
