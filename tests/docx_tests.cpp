@@ -13,6 +13,10 @@
 #include "spell/SpellHighlighter.h"
 #include "ui/PageEdit.h"
 #include "ui/Theme.h"
+#include "ui/TablePropertiesDialog.h"
+#include <QComboBox>
+#include <QDoubleSpinBox>
+#include "docx/TableFormat.h"
 #include "ui/RecentFiles.h"
 #include <QDir>
 #include <QFileInfo>
@@ -320,7 +324,9 @@ static void checkEditorDoc(const QByteArray &data)
         QTextCursor cc = table->cellAt(2, 1).firstCursorPosition();
         cc.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
         CHECK(cc.selectedText() == QLatin1String("b2"), "cell text kept");
-        CHECK(table->format().border() > 0, "table borders kept");
+        CHECK(TblBorders::of(table->format()).detect() == TblBorders::All
+                  && table->cellAt(2, 0).format().toTableCellFormat().leftBorder() > 0,
+              "table borders kept (drawn per cell)");
     }
 
     int images = 0;
@@ -899,6 +905,108 @@ static void recentTests()
     CHECK(recent::load().isEmpty(), "clear list");
 }
 
+static QTextTable *firstTable(QTextDocument &doc)
+{
+    for (QTextFrame *f : doc.rootFrame()->childFrames())
+        if (auto *t = qobject_cast<QTextTable *>(f))
+            return t;
+    return nullptr;
+}
+
+static void tableTests()
+{
+    // Spec round trip and preset detection.
+    for (auto p : {TblBorders::None, TblBorders::All, TblBorders::Outside, TblBorders::Inside, TblBorders::Horizontal}) {
+        const TblBorders b = TblBorders::preset(p, 12, QStringLiteral("FF0000"));
+        CHECK(TblBorders::fromSpec(b.spec()).detect() == p, qPrintable(QStringLiteral("border preset %1 round-trips").arg(int(p))));
+    }
+    CHECK(TablePropertiesDialog::distributed(3, 300) == QList<double>({100, 100, 100}), "distribute evenly");
+    CHECK(TablePropertiesDialog::scaledTo({100, 300}, 200) == QList<double>({50, 150}), "fit to width keeps proportions");
+
+    // Read: explicit outside-only red 1.5pt borders, 0.15" cell margins, centred table, centred cell.
+    const QString docXml = QStringLiteral(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+        "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" "
+        "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body>"
+        "<w:tbl><w:tblPr><w:tblW w:w=\"4320\" w:type=\"dxa\"/><w:jc w:val=\"center\"/><w:tblBorders>"
+        "<w:top w:val=\"single\" w:sz=\"12\" w:space=\"0\" w:color=\"FF0000\"/><w:left w:val=\"single\" w:sz=\"12\" w:space=\"0\" w:color=\"FF0000\"/>"
+        "<w:bottom w:val=\"single\" w:sz=\"12\" w:space=\"0\" w:color=\"FF0000\"/><w:right w:val=\"single\" w:sz=\"12\" w:space=\"0\" w:color=\"FF0000\"/>"
+        "<w:insideH w:val=\"nil\"/><w:insideV w:val=\"nil\"/></w:tblBorders>"
+        "<w:tblCellMar><w:left w:w=\"216\" w:type=\"dxa\"/><w:right w:w=\"216\" w:type=\"dxa\"/></w:tblCellMar></w:tblPr>"
+        "<w:tblGrid><w:gridCol w:w=\"1440\"/><w:gridCol w:w=\"2880\"/></w:tblGrid>"
+        "<w:tr><w:tc><w:tcPr><w:tcW w:w=\"1440\" w:type=\"dxa\"/><w:vAlign w:val=\"center\"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>"
+        "<w:tc><w:tcPr><w:tcW w:w=\"2880\" w:type=\"dxa\"/></w:tcPr><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr>"
+        "<w:tr><w:tc><w:p><w:r><w:t>c</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>d</w:t></w:r></w:p></w:tc></w:tr>"
+        "</w:tbl><w:p/><w:sectPr><w:pgSz w:w=\"12240\" w:h=\"15840\"/><w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\"/></w:sectPr>"
+        "</w:body></w:document>");
+    Package pkg = Package::blank();
+    pkg.parts.insert(pkg.mainPart, docXml.toUtf8());
+    QTextDocument doc;
+    QString err;
+    CHECK(DocxReader::build(pkg, &doc, &err), "table doc builds");
+    QTextTable *t = firstTable(doc);
+    CHECK(t != nullptr, "table read");
+    if (!t)
+        return;
+    const TblBorders b = TblBorders::of(t->format());
+    CHECK(b.detect() == TblBorders::Outside && b.side[TblBorders::Top].sz == 12 && b.side[TblBorders::Top].color == QLatin1String("FF0000"),
+          "outside-only borders read with width and colour");
+    CHECK(t->format().intProperty(TableCellMarLR) == 216, "cell margins read");
+    CHECK((t->format().alignment() & Qt::AlignHCenter), "table alignment read");
+    CHECK(t->cellAt(0, 0).format().verticalAlignment() == QTextCharFormat::AlignMiddle, "cell vAlign read");
+    const QTextTableCellFormat c00 = t->cellAt(0, 0).format().toTableCellFormat();
+    const QTextTableCellFormat c11 = t->cellAt(1, 1).format().toTableCellFormat();
+    CHECK(c00.leftBorder() >= 2 && c00.topBorder() >= 2 && c00.rightBorder() == 0 && c00.bottomBorder() == 0,
+          "outer sides drawn, inside sides not");
+    CHECK(c11.rightBorder() >= 2 && c11.bottomBorder() >= 2 && c11.rightBorderBrush().color() == QColor(Qt::red)
+              && qAbs(c00.leftPadding() - twipsToPx(216)) < 0.01,
+          "per-cell border colour and padding");
+
+    // Write and read back.
+    Package out = pkg;
+    const QByteArray saved = DocxWriter::build(&doc, out, &err);
+    zip::Reader z;
+    z.open(saved);
+    const QString xml = QString::fromUtf8(z.read(QStringLiteral("word/document.xml")));
+    CHECK(xml.contains(QLatin1String("<w:insideH w:val=\"nil\"/>")) && xml.contains(QLatin1String("w:sz=\"12\" w:space=\"0\" w:color=\"FF0000\"")),
+          "borders written");
+    CHECK(xml.contains(QLatin1String("<w:tblCellMar><w:left w:w=\"216\"")), "cell margins written");
+    CHECK(xml.contains(QLatin1String("<w:vAlign w:val=\"center\"/>")), "cell vAlign written");
+    CHECK(xml.indexOf(QLatin1String("<w:tblLayout")) < xml.indexOf(QLatin1String("<w:tblCellMar")), "tblPr children in schema order");
+
+    // Structural edit: a new last row takes the bottom border.
+    t->insertRows(2, 1);
+    applyTableCellFormats(t);
+    CHECK(t->cellAt(2, 0).format().toTableCellFormat().bottomBorder() >= 2
+              && t->cellAt(1, 0).format().toTableCellFormat().bottomBorder() == 0,
+          "borders follow inserted rows");
+
+    // Dialog: switch to All borders, 1pt, one undo step.
+    doc.clearUndoRedoStacks();
+    const QString before = t->format().stringProperty(TableBorderSpec);
+    {
+        TablePropertiesDialog dlg(t, 624, 0, 1, 0, 1);
+        auto *preset = dlg.findChild<QComboBox *>(QStringLiteral("preset"));
+        auto *width = dlg.findChild<QComboBox *>(QStringLiteral("borderWidth"));
+        auto *valign = dlg.findChild<QComboBox *>(QStringLiteral("valign"));
+        CHECK(preset && preset->currentData().toInt() == TblBorders::Outside, "dialog shows current preset");
+        CHECK(valign && valign->currentData().toInt() == int(QTextCharFormat::AlignMiddle), "dialog shows cell vAlign");
+        if (preset && width && valign) {
+            preset->setCurrentIndex(preset->findData(TblBorders::All));
+            width->setCurrentIndex(width->findData(8));
+            valign->setCurrentIndex(valign->findData(int(QTextCharFormat::AlignBottom)));
+        }
+        dlg.apply();
+    }
+    const TblBorders after = TblBorders::of(t->format());
+    CHECK(after.detect() == TblBorders::All && after.side[TblBorders::InsideV].sz == 8 && after.side[TblBorders::InsideV].color == QLatin1String("FF0000"),
+          "dialog applies preset, width and keeps colour");
+    CHECK(t->cellAt(0, 0).format().verticalAlignment() == QTextCharFormat::AlignBottom, "dialog applies cell vAlign");
+    CHECK(t->cellAt(0, 0).format().toTableCellFormat().rightBorder() > 0, "inside borders now drawn");
+    doc.undo();
+    CHECK(t->format().stringProperty(TableBorderSpec) == before && !doc.isUndoAvailable(), "table properties undo in one step");
+}
+
 static void spellMenuTest()
 {
     PageEdit edit;
@@ -1197,6 +1305,7 @@ int main(int argc, char **argv)
     spellTests();
     spellMenuTest();
     recentTests();
+    tableTests();
     paperTests();
     findReplaceTests();
     codeTests(keep.isEmpty() ? QString() : keep + QStringLiteral(".code.docx"));

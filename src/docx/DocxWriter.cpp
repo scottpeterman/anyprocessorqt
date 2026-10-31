@@ -1,4 +1,5 @@
 #include "docx/DocxWriter.h"
+#include "docx/TableFormat.h"
 #include "docx/Convert.h"
 #include "docx/Units.h"
 #include "docx/Xml.h"
@@ -474,19 +475,33 @@ struct Writer {
             out += QStringLiteral("<w:jc w:val=\"center\"/>");
         else if (a & Qt::AlignRight)
             out += QStringLiteral("<w:jc w:val=\"right\"/>");
-        if (tf.border() > 0) {
+        const QString spec = tf.stringProperty(TableBorderSpec);
+        if (!spec.isEmpty() || tf.boolProperty(TableBorders) || tf.border() > 0 || ts.isEmpty()) {
+            // Explicit borders (document, dialog or new table), or none when there's
+            // no style to supply them. A styled table without its own borders keeps
+            // the style's.
+            const TblBorders b = TblBorders::of(tf);
             out += QStringLiteral("<w:tblBorders>");
-            for (const char *side : {"top", "left", "bottom", "right", "insideH", "insideV"})
-                out += QStringLiteral("<w:%1 w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"auto\"/>")
-                           .arg(QLatin1String(side));
-            out += QStringLiteral("</w:tblBorders>");
-        } else if (ts.isEmpty()) {
-            out += QStringLiteral("<w:tblBorders>");
-            for (const char *side : {"top", "left", "bottom", "right", "insideH", "insideV"})
-                out += QStringLiteral("<w:%1 w:val=\"nil\"/>").arg(QLatin1String(side));
+            for (int i = 0; i < TblBorders::Count; ++i) {
+                const BorderSide &sd = b.side[i];
+                const QLatin1String name(TblBorders::xmlName(TblBorders::Side(i)));
+                if (sd.on())
+                    out += QStringLiteral("<w:%1 w:val=\"%2\" w:sz=\"%3\" w:space=\"0\" w:color=\"%4\"/>")
+                               .arg(name, xmlAttrEsc(sd.val))
+                               .arg(sd.sz)
+                               .arg(sd.color);
+                else
+                    out += QStringLiteral("<w:%1 w:val=\"nil\"/>").arg(name);
+            }
             out += QStringLiteral("</w:tblBorders>");
         }
         out += QStringLiteral("<w:tblLayout w:type=\"fixed\"/>");
+        if (tf.hasProperty(TableCellMarLR)) {
+            const int m = tf.intProperty(TableCellMarLR);
+            out += QStringLiteral("<w:tblCellMar><w:left w:w=\"%1\" w:type=\"dxa\"/><w:right w:w=\"%1\" w:type=\"dxa\"/>"
+                                  "</w:tblCellMar>")
+                       .arg(m);
+        }
         out += QStringLiteral("</w:tblPr><w:tblGrid>");
         for (int w : widths)
             out += QStringLiteral("<w:gridCol w:w=\"%1\"/>").arg(w);
@@ -513,6 +528,11 @@ struct Writer {
                 if (bg.style() != Qt::NoBrush)
                     out += QStringLiteral("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"%1\"/>")
                                .arg(bg.color().name(QColor::HexRgb).mid(1).toUpper());
+                const auto va = cell.format().verticalAlignment();
+                if (va == QTextCharFormat::AlignMiddle)
+                    out += QStringLiteral("<w:vAlign w:val=\"center\"/>");
+                else if (va == QTextCharFormat::AlignBottom)
+                    out += QStringLiteral("<w:vAlign w:val=\"bottom\"/>");
                 out += QStringLiteral("</w:tcPr>");
                 if (continuation) {
                     out += QStringLiteral("<w:p/>");
