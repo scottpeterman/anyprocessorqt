@@ -1,0 +1,9 @@
+<RCC>
+    <qresource prefix="/dictionaries">
+        <file alias="en_US.aff">../third_party/dictionaries/en_US.aff</file>
+        <file alias="en_US.dic">../third_party/dictionaries/en_US.dic</file>
+    </qresource>
+    <qresource prefix="/wordlists">
+        <file alias="tech.txt">wordlists/tech.txt</file>
+    </qresource>
+</RCC>

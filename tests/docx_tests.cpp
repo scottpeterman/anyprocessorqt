@@ -9,8 +9,16 @@
 #include "docx/DocxWriter.h"
 #include "docx/Units.h"
 #include "zip/Zip.h"
+#include "spell/SpellChecker.h"
+#include "spell/SpellHighlighter.h"
+#include "ui/PageEdit.h"
 
-#include <QGuiApplication>
+#include <QApplication>
+#include <QContextMenuEvent>
+#include <QMenu>
+#include <QTimer>
+#include <QStandardPaths>
+#include <QTextLayout>
 #include <QImage>
 #include <QPainter>
 #include <QRegularExpression>
@@ -454,6 +462,125 @@ static void fixtureChecks(const QString &path)
           "compensated line height is not written to the file");
 }
 
+static void spellTests()
+{
+    spell::SpellChecker &sc = spell::SpellChecker::instance();
+    CHECK(sc.setLanguage(QStringLiteral("en_US")), "bundled en_US loads");
+    CHECK(sc.isCorrect(QStringLiteral("hello")) && sc.isCorrect(QStringLiteral("Hello")), "known word accepted");
+    CHECK(!sc.isCorrect(QStringLiteral("recieved")), "misspelling rejected");
+    CHECK(sc.suggestions(QStringLiteral("recieved")).contains(QStringLiteral("received")), "suggestion offered");
+    CHECK(sc.isCorrect(QStringLiteral("Junos")) && sc.isCorrect(QStringLiteral("failover")), "tech supplement loaded");
+    CHECK(sc.isCorrect(QStringLiteral("don't")), "apostrophe word accepted");
+
+    const QString sample = QStringLiteral("Teh BGP NetBox PyQt6 netlapse.yaml https://x.io/a b@c.com edge1-01.fra1 multi-vendr it\u2019s fine.");
+    QStringList got;
+    for (const spell::Word &w : spell::SpellChecker::words(sample))
+        got << w.text;
+    CHECK(got == QStringList({QStringLiteral("Teh"), QStringLiteral("multi"), QStringLiteral("vendr"), QStringLiteral("it's"),
+                              QStringLiteral("fine")}),
+          qPrintable(QStringLiteral("tokenizer skips acronyms/names/paths/urls: got %1").arg(got.join(QLatin1Char('|')))));
+
+    sc.addToPersonal(QStringLiteral("Penguinish"));
+    CHECK(sc.isCorrect(QStringLiteral("Penguinish")), "personal word accepted");
+    QFile pd(sc.personalDictionaryPath());
+    CHECK(pd.open(QIODevice::ReadOnly) && pd.readAll().contains("Penguinish"), "personal word persisted");
+
+    // Highlighting is display-only: no document change, undo or saved formatting.
+    QTextDocument doc;
+    Package pkg = Package::blank();
+    QString err;
+    DocxReader::build(pkg, &doc, &err);
+    QTextCursor(&doc).insertText(QStringLiteral("Teh quick brown fox"));
+    doc.setModified(false);
+    doc.clearUndoRedoStacks();
+    spell::SpellHighlighter hl(&doc);
+    hl.recheck();
+    sc.ignore(QStringLiteral("zzzqx"));  // any word-list change re-checks every open document
+    bool underlined = false;
+    for (const QTextLayout::FormatRange &r : doc.begin().layout()->formats())
+        if (r.start == 0 && r.length == 3 && r.format.underlineStyle() == QTextCharFormat::SpellCheckUnderline)
+            underlined = true;
+    CHECK(underlined, "misspelling underlined");
+    CHECK(!doc.isModified() && doc.availableUndoSteps() == 0, "highlighting leaves document unmodified");
+    zip::Reader z;
+    z.open(DocxWriter::build(&doc, pkg, &err));
+    CHECK(!QString::fromUtf8(z.read(QStringLiteral("word/document.xml"))).contains(QStringLiteral("<w:u ")),
+          "spell underline not saved");
+}
+
+static void viewTests(const QString &file)
+{
+    PageEdit edit;
+    Package pkg;
+    QString err;
+    if (!DocxReader::loadFile(file, edit.document(), &pkg, &err)) {
+        CHECK(false, "view test doc loads");
+        return;
+    }
+    edit.setPageSetup(pkg.page);
+    edit.resize(1200, 800);
+    edit.show();
+    QApplication::processEvents();
+    const QByteArray before = DocxWriter::build(edit.document(), pkg, &err);
+    edit.document()->setModified(false);
+    edit.setViewMode(PageEdit::ViewMode::Draft);
+    QApplication::processEvents();
+    CHECK(edit.document()->textWidth() > twipsToPx(pkg.page.width), "draft view widens the text");
+    CHECK(!edit.document()->isModified() && edit.document()->availableUndoSteps() == 0,
+          "switching to draft does not modify the document");
+    edit.setViewMode(PageEdit::ViewMode::Page);
+    QApplication::processEvents();
+    CHECK(qAbs(edit.document()->textWidth() - twipsToPx(pkg.page.width)) < 1.0, "page view restores page width");
+    zip::Reader a, b;
+    a.open(before);
+    b.open(DocxWriter::build(edit.document(), pkg, &err));
+    CHECK(a.read(QStringLiteral("word/document.xml")) == b.read(QStringLiteral("word/document.xml")),
+          "view switching does not change the saved document");
+}
+
+static void spellMenuTest()
+{
+    PageEdit edit;
+    Package pkg = Package::blank();
+    QString err;
+    DocxReader::build(pkg, edit.document(), &err);
+    QTextCursor c(edit.document());
+    QTextCharFormat bold = c.charFormat();
+    bold.setFontWeight(QFont::Bold);
+    c.insertText(QStringLiteral("We recieved it"), bold);
+    edit.resize(900, 500);
+    edit.show();
+    QApplication::processEvents();
+
+    // Point at the middle of "recieved".
+    QTextCursor at(edit.document());
+    at.setPosition(6);
+    const QPoint pos = edit.cursorRect(at).center();
+    QStringList seen;
+    QTimer::singleShot(150, [&] {
+        if (auto *m = qobject_cast<QMenu *>(QApplication::activePopupWidget())) {
+            for (QAction *a : m->actions())
+                if (!a->isSeparator())
+                    seen << a->text();
+            QAction *first = m->actions().value(0);
+            m->close();
+            if (first)
+                first->trigger();
+        }
+    });
+    QContextMenuEvent ev(QContextMenuEvent::Mouse, pos, edit.viewport()->mapToGlobal(pos));
+    QApplication::sendEvent(edit.viewport(), &ev);
+    QApplication::processEvents();
+    CHECK(!seen.isEmpty() && seen.first() == QLatin1String("received"),
+          qPrintable(QStringLiteral("first suggestion is 'received' (menu: %1)").arg(seen.join(QLatin1Char('|')))));
+    CHECK(seen.contains(QStringLiteral("Add \"recieved\" to Dictionary")) && seen.contains(QStringLiteral("Ignore All")),
+          "menu offers add/ignore");
+    CHECK(edit.document()->begin().text() == QLatin1String("We received it"), "suggestion replaces the word");
+    QTextCursor chk(edit.document());
+    chk.setPosition(5);
+    CHECK(chk.charFormat().fontWeight() >= QFont::Bold, "replacement keeps the word's formatting");
+}
+
 static void zipTests()
 {
     QByteArray big;
@@ -476,7 +603,9 @@ int main(int argc, char **argv)
 {
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))
         qputenv("QT_QPA_PLATFORM", "offscreen");
-    QGuiApplication app(argc, argv);
+    QStandardPaths::setTestModeEnabled(true);  // personal dictionary etc. go to a test location
+    QApplication app(argc, argv);
+    QApplication::setApplicationName(QStringLiteral("anyprocessorqt-tests"));
 
     QString keep;
     QStringList files;
@@ -497,8 +626,12 @@ int main(int argc, char **argv)
         if (out.open(QIODevice::WriteOnly))
             out.write(editorDoc);
     }
+    spellTests();
+    spellMenuTest();
     for (const QString &f : files) {
         roundTripFile(f);
+        if (f.endsWith(QLatin1String("features.docx")))
+            viewTests(f);
         if (f.endsWith(QLatin1String("features.docx")))
             fixtureChecks(f);
     }

@@ -9,6 +9,9 @@ on:
     branches: ['**']
     paths:
       - 'packaging/**'
+      - 'third_party/**'
+      - 'resources/**'
+      - 'CMakeLists.txt'
       - '.github/workflows/release.yml'
   workflow_dispatch:
 

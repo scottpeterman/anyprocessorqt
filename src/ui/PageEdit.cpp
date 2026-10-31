@@ -1,7 +1,11 @@
 #include "ui/PageEdit.h"
 #include "docx/Units.h"
+#include "spell/SpellChecker.h"
+#include "spell/SpellHighlighter.h"
 
 #include <QAbstractTextDocumentLayout>
+#include <QContextMenuEvent>
+#include <QMenu>
 #include <QImage>
 #include <QMimeData>
 #include <QPainter>
@@ -12,6 +16,8 @@
 #include <QTextImageFormat>
 #include <QUrl>
 #include <QUuid>
+
+#include <memory>
 
 using namespace docx;
 
@@ -27,7 +33,20 @@ PageEdit::PageEdit(QWidget *parent) : QTextEdit(parent)
     pal.setColor(QPalette::Text, Qt::black);
     setPalette(pal);
     viewport()->setAutoFillBackground(true);
+    m_spell = new spell::SpellHighlighter(document());
     setPageSetup(PageSetup());
+}
+
+void PageEdit::setViewMode(ViewMode mode)
+{
+    if (m_mode == mode)
+        return;
+    m_mode = mode;
+    QPalette pal = palette();
+    pal.setColor(QPalette::Window, mode == ViewMode::Page ? QColor(0xE6, 0xE6, 0xE6) : QColor(Qt::white));
+    setPalette(pal);
+    updateMargins();
+    ensureCursorVisible();
 }
 
 int PageEdit::pageWidthPx() const
@@ -38,7 +57,6 @@ int PageEdit::pageWidthPx() const
 void PageEdit::setPageSetup(const PageSetup &page)
 {
     m_page = page;
-    setLineWrapColumnOrWidth(pageWidthPx());
     updateMargins();
 }
 
@@ -46,10 +64,24 @@ void PageEdit::updateMargins()
 {
     const int sb = verticalScrollBar()->isVisible() ? verticalScrollBar()->width() : 0;
     const int avail = width() - sb;
-    const int pw = pageWidthPx();
-    const int left = qMax(0, (avail - pw) / 2);
-    const int right = qMax(0, avail - pw - left);
-    setViewportMargins(left, 24, right, 0);
+    if (m_mode == ViewMode::Page) {
+        const int pw = pageWidthPx();
+        setLineWrapColumnOrWidth(pw);
+        const int left = qMax(0, (avail - pw) / 2);
+        const int right = qMax(0, avail - pw - left);
+        setViewportMargins(left, 24, right, 0);
+        return;
+    }
+    // Draft: text spans the window. The page margins are part of the document
+    // (root frame), and changing them is an undoable edit, so instead the
+    // viewport is widened by the margins and shifted so they sit off-screen.
+    const QTextFrameFormat rf = document()->rootFrame()->frameFormat();
+    const int pad = 28;
+    const int hideL = qMax(0, int(rf.leftMargin()) - pad);
+    const int hideR = qMax(0, int(rf.rightMargin()) - pad);
+    const int hideT = qMax(0, int(rf.topMargin()) - 16);
+    setLineWrapColumnOrWidth(qMax(200, avail + hideL + hideR));
+    setViewportMargins(-hideL, -hideT, -hideR, 0);
 }
 
 void PageEdit::resizeEvent(QResizeEvent *e)
@@ -129,6 +161,92 @@ void PageEdit::paintDecorations(QPainter &p, QTextDocument *doc, const QRectF &c
         prevRect = r;
         prevLeft = leftSpec;
     }
+}
+
+bool PageEdit::selectNextMisspelling()
+{
+    spell::SpellChecker &sc = spell::SpellChecker::instance();
+    if (!sc.isLoaded())
+        return false;
+    QTextDocument *doc = document();
+    const QTextCursor cur = textCursor();
+    const int from = cur.hasSelection() ? cur.selectionEnd() : cur.position();
+    const QTextBlock startBlock = doc->findBlock(from);
+    for (int pass = 0; pass < 2; ++pass) {
+        QTextBlock b = pass == 0 ? startBlock : doc->begin();
+        for (; b.isValid(); b = b.next()) {
+            if (pass == 1 && b.position() > startBlock.position())
+                break;
+            for (const spell::Word &w : spell::SpellChecker::words(b.text())) {
+                const int abs = b.position() + w.start;
+                if (pass == 0 && b == startBlock && abs < from)
+                    continue;
+                if (!sc.isCorrect(w.text)) {
+                    QTextCursor c(doc);
+                    c.setPosition(abs);
+                    c.setPosition(abs + w.length, QTextCursor::KeepAnchor);
+                    setTextCursor(c);
+                    ensureCursorVisible();
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+void PageEdit::contextMenuEvent(QContextMenuEvent *e)
+{
+    std::unique_ptr<QMenu> menu(createStandardContextMenu(e->pos()));
+    spell::SpellChecker &sc = spell::SpellChecker::instance();
+    const QTextCursor at = cursorForPosition(e->pos());
+    const QTextBlock block = at.block();
+    const int offset = at.position() - block.position();
+    if (sc.isEnabled() && sc.isLoaded() && !textCursor().hasSelection()) {
+        for (const spell::Word &w : spell::SpellChecker::words(block.text())) {
+            if (offset < w.start || offset > w.start + w.length || sc.isCorrect(w.text))
+                continue;
+            const int start = block.position() + w.start;
+            const int length = w.length;
+            QAction *first = menu->actions().value(0);
+            const QStringList sugg = sc.suggestions(w.text);
+            QList<QAction *> added;
+            for (const QString &s : sugg) {
+                QAction *a = new QAction(s, menu.get());
+                QFont f = a->font();
+                f.setBold(true);
+                a->setFont(f);
+                connect(a, &QAction::triggered, this, [this, start, length, s] {
+                    QTextCursor fc(document());
+                    fc.setPosition(start + 1);
+                    const QTextCharFormat fmt = fc.charFormat();  // format of the word's first character
+                    QTextCursor rc(document());
+                    rc.setPosition(start);
+                    rc.setPosition(start + length, QTextCursor::KeepAnchor);
+                    rc.insertText(s, fmt);
+                });
+                added << a;
+            }
+            if (sugg.isEmpty()) {
+                QAction *none = new QAction(tr("(no suggestions)"), menu.get());
+                none->setEnabled(false);
+                added << none;
+            }
+            QAction *sep1 = new QAction(menu.get());
+            sep1->setSeparator(true);
+            const QString word = w.text;
+            QAction *addWord = new QAction(tr("Add \"%1\" to Dictionary").arg(word), menu.get());
+            connect(addWord, &QAction::triggered, this, [word] { spell::SpellChecker::instance().addToPersonal(word); });
+            QAction *ignore = new QAction(tr("Ignore All"), menu.get());
+            connect(ignore, &QAction::triggered, this, [word] { spell::SpellChecker::instance().ignore(word); });
+            QAction *sep2 = new QAction(menu.get());
+            sep2->setSeparator(true);
+            added << sep1 << addWord << ignore << sep2;
+            menu->insertActions(first, added);
+            break;
+        }
+    }
+    menu->exec(e->globalPos());
 }
 
 bool PageEdit::canInsertFromMimeData(const QMimeData *source) const
