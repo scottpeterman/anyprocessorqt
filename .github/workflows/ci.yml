@@ -41,7 +41,7 @@ jobs:
         include:
           - os: ubuntu-22.04
             qt_host: linux
-          - os: macos-14
+          - os: macos-15
             qt_host: mac
           - os: windows-2022
             qt_host: windows
