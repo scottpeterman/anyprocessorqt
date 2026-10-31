@@ -1,0 +1,82 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # Distro Qt 6.4.2: the same floor as ChromeOS (Debian bookworm).
+  linux-qt64:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt and fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qt6-base-dev qt6-base-dev-tools libgl-dev fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j4
+      - name: Test
+        run: |
+          set +e
+          ./build/anyprocessorqt_tests tests/fixtures/features.docx > test.log 2>&1
+          status=$?
+          cat test.log
+          [ $status -ne 0 ] && grep -E "FAIL|passed" test.log | sed 's/^/::error::/'
+          exit $status
+      - name: CLI smoke
+        run: |
+          ./build/anyprocessorqt --roundtrip tests/fixtures/features.docx rt.docx
+          ./build/anyprocessorqt --pdf rt.docx rt.pdf
+          ./build/anyprocessorqt_tests rt.docx
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            qt_host: linux
+          - os: macos-14
+            qt_host: mac
+          - os: windows-2022
+            qt_host: windows
+            qt_arch: win64_msvc2022_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt 6.10.3
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.10.3
+          host: ${{ matrix.qt_host }}
+          arch: ${{ matrix.qt_arch }}
+          cache: true
+      - name: MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Linux build deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl-dev libxkbcommon-dev fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2
+      - name: Build
+        shell: bash
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release -j4
+      - name: Test
+        shell: bash
+        run: |
+          bin=./build/anyprocessorqt_tests
+          [ -f build/Release/anyprocessorqt_tests.exe ] && bin=./build/Release/anyprocessorqt_tests.exe
+          set +e
+          "$bin" tests/fixtures/features.docx > test.log 2>&1
+          status=$?
+          cat test.log
+          # Surface failures as annotations (readable on the run page without opening logs).
+          grep -E "FAIL|passed" test.log | sed 's/^/::error::/'
+          exit $status

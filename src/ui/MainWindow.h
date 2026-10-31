@@ -1,0 +1,83 @@
+#pragma once
+
+#include "docx/Package.h"
+
+#include <QMainWindow>
+#include <QTextCharFormat>
+#include <QTextListFormat>
+
+class PageEdit;
+class QAction;
+class QComboBox;
+class QFontComboBox;
+class QLabel;
+class QTimer;
+
+class MainWindow : public QMainWindow {
+    Q_OBJECT
+public:
+    explicit MainWindow(QWidget *parent = nullptr);
+
+    bool openFile(const QString &path);
+    PageEdit *editor() const { return m_edit; }
+
+protected:
+    void closeEvent(QCloseEvent *e) override;
+
+private:
+    void buildActions();
+    void buildMenus();
+    void buildToolbars();
+
+    void newDocument();
+    void open();
+    bool save();
+    bool saveAs();
+    bool saveTo(const QString &path);
+    void exportPdf();
+    void print();
+    bool maybeSave();
+    void setCurrentPath(const QString &path);
+    void rebuildStyleCombo();
+
+    void mergeFormat(const QTextCharFormat &fmt);
+    void applyParagraphStyle(const QString &styleId);
+    void clearFormatting();
+    void setAlignment(Qt::Alignment a);
+    void toggleList(QTextListFormat::Style style);
+    void changeIndent(int delta);
+    void setLineSpacing(double multiple);
+    void chooseTextColor();
+    void toggleHighlight();
+    void insertImage();
+    void resizeImage();
+    void insertTable();
+    void insertPageBreak();
+    void insertHyperlink();
+    void find();
+    void findNext();
+
+    void updateFormatUi();
+    void updateWordCount();
+
+    PageEdit *m_edit = nullptr;
+    docx::Package m_pkg;
+    QString m_path;
+    QString m_findText;
+
+    QComboBox *m_styleCombo = nullptr;
+    QFontComboBox *m_fontCombo = nullptr;
+    QComboBox *m_sizeCombo = nullptr;
+    QLabel *m_wordCount = nullptr;
+    QTimer *m_countTimer = nullptr;
+    bool m_updatingUi = false;
+
+    QAction *m_new, *m_open, *m_save, *m_saveAs, *m_exportPdf, *m_print, *m_quit;
+    QAction *m_undo, *m_redo, *m_cut, *m_copy, *m_paste, *m_selectAll, *m_find, *m_findNext;
+    QAction *m_bold, *m_italic, *m_underline, *m_strike, *m_super, *m_sub, *m_color, *m_highlight, *m_clearFmt;
+    QAction *m_alignLeft, *m_alignCenter, *m_alignRight, *m_alignJustify;
+    QAction *m_bullets, *m_numbers, *m_indentMore, *m_indentLess;
+    QAction *m_insImage, *m_resizeImage, *m_insTable, *m_insBreak, *m_insLink;
+    QAction *m_rowAbove, *m_rowBelow, *m_colLeft, *m_colRight, *m_delRow, *m_delCol, *m_delTable, *m_merge, *m_split;
+    QAction *m_about;
+};
