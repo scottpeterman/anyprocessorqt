@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.19)
 
-project(anyprocessorqt VERSION 0.2.0 LANGUAGES CXX)
+project(anyprocessorqt VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -55,6 +55,8 @@ add_library(anyprocessor_core STATIC
     src/docx/Package.h
     src/docx/Convert.cpp
     src/docx/Convert.h
+    src/docx/CodeStyles.cpp
+    src/docx/CodeStyles.h
     src/docx/Units.h
     src/docx/DocxReader.cpp
     src/docx/DocxReader.h
@@ -82,6 +84,8 @@ add_executable(anyprocessorqt
     src/ui/MainWindow.h
     src/ui/InsertTableDialog.cpp
     src/ui/InsertTableDialog.h
+    src/ui/FindBar.cpp
+    src/ui/FindBar.h
 )
 target_compile_definitions(anyprocessorqt PRIVATE ANYPROCESSORQT_VERSION="${PROJECT_VERSION}")
 target_link_libraries(anyprocessorqt PRIVATE anyprocessor_core anyprocessor_spell Qt6::Widgets Qt6::PrintSupport)
@@ -99,7 +103,7 @@ elseif(APPLE)
 endif()
 
 if(ANYPROCESSORQT_BUILD_TESTS)
-    add_executable(anyprocessorqt_tests tests/docx_tests.cpp src/ui/PageEdit.cpp src/ui/PageEdit.h)
+    add_executable(anyprocessorqt_tests tests/docx_tests.cpp src/ui/PageEdit.cpp src/ui/PageEdit.h src/ui/FindBar.cpp src/ui/FindBar.h)
     target_link_libraries(anyprocessorqt_tests PRIVATE anyprocessor_core anyprocessor_spell Qt6::Widgets)
 endif()
 

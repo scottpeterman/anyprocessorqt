@@ -12,6 +12,8 @@
 #include "spell/SpellChecker.h"
 #include "spell/SpellHighlighter.h"
 #include "ui/PageEdit.h"
+#include "ui/FindBar.h"
+#include "docx/CodeStyles.h"
 
 #include <QApplication>
 #include <QContextMenuEvent>
@@ -581,6 +583,127 @@ static void spellMenuTest()
     CHECK(chk.charFormat().fontWeight() >= QFont::Bold, "replacement keeps the word's formatting");
 }
 
+static void findReplaceTests()
+{
+    QTextDocument doc;
+    QTextCursor c(&doc);
+    QTextCharFormat plain, bold;
+    bold.setFontWeight(QFont::Bold);
+    c.insertText(QStringLiteral("the cat"), bold);
+    c.insertText(QStringLiteral(" and the hat. The end."), plain);
+    doc.clearUndoRedoStacks();
+    CHECK(FindBar::matches(&doc, QStringLiteral("the"), {}).size() == 3, "case-insensitive match count");
+    CHECK(FindBar::matches(&doc, QStringLiteral("the"), QTextDocument::FindCaseSensitively).size() == 2,
+          "case-sensitive match count");
+    const int n = FindBar::replaceAll(&doc, QStringLiteral("the"), QStringLiteral("a"), {});
+    CHECK(n == 3 && doc.toPlainText() == QLatin1String("a cat and a hat. a end."), "replace all");
+    QTextCursor f(&doc);
+    f.setPosition(1);
+    CHECK(f.charFormat().fontWeight() >= QFont::Bold, "replacement keeps the match's formatting");
+    // availableUndoSteps() counts Qt's internal commands; what matters is that one
+    // undo() reverts the whole replace and leaves nothing else to undo.
+    doc.undo();
+    CHECK(doc.toPlainText() == QLatin1String("the cat and the hat. The end.") && !doc.isUndoAvailable(),
+          "replace all is a single undo step");
+
+    QTextDocument d2;
+    QTextCursor(&d2).insertText(QStringLiteral("a b a"));
+    CHECK(FindBar::replaceAll(&d2, QStringLiteral("a"), QStringLiteral("aa"), {}) == 2
+              && d2.toPlainText() == QLatin1String("aa b aa"),
+          "replacement containing the query doesn't loop");
+
+    QTextDocument d3;
+    QTextCursor(&d3).insertText(QStringLiteral("cat category Cat cat."));
+    CHECK(FindBar::replaceAll(&d3, QStringLiteral("cat"), QStringLiteral("dog"),
+                              QTextDocument::FindWholeWords | QTextDocument::FindCaseSensitively) == 2
+              && d3.toPlainText() == QLatin1String("dog category Cat dog."),
+          "whole words + match case");
+}
+
+static void codeTests(const QString &keepPath)
+{
+    QTextDocument doc;
+    Package pkg = Package::blank();
+    QString err;
+    DocxReader::build(pkg, &doc, &err);
+    CHECK(code::ensureStyles(pkg), "code styles added");
+    CHECK(pkg.styles.style(QStringLiteral("Code")) && pkg.styles.style(QStringLiteral("CodeChar")), "code styles parsed");
+    CHECK(code::ensureStyles(pkg), "ensureStyles is idempotent");
+    zip::Reader zs;
+    zs.open(DocxWriter::build(&doc, pkg, &err));
+    CHECK(QString::fromUtf8(zs.read(QStringLiteral("word/styles.xml"))).count(QStringLiteral("w:styleId=\"Code\"")) == 1,
+          "Code style written once");
+
+    QTextCursor c(&doc);
+    setStyle(c, pkg, QStringLiteral("Normal"));
+    const QTextCharFormat normal = styleChar(pkg, QStringLiteral("Normal"));
+    c.insertText(QStringLiteral("Call "), normal);
+    QTextCharFormat inl = normal;
+    inl.setProperty(RStyle, QStringLiteral("CodeChar"));
+    inl.setFontFamilies(QStringList{QStringLiteral("Consolas")});
+    inl.setBackground(QColor(0xF3, 0xF4, 0xF6));
+    c.insertText(QStringLiteral("get_fooo()"), inl);
+    c.insertText(QStringLiteral(" in this sentance."), normal);
+    const QStringList lines = {QStringLiteral("def main():"), QStringLiteral("    retrun 0  # tpyo in code"),
+                               QStringLiteral("\tindented")};
+    QTextBlock firstCode;
+    for (const QString &line : lines) {
+        c.insertBlock();
+        setStyle(c, pkg, QStringLiteral("Code"));
+        c.insertText(line, styleChar(pkg, QStringLiteral("Code")));
+        if (!firstCode.isValid())
+            firstCode = c.block();
+    }
+    c.insertBlock();
+    setStyle(c, pkg, QStringLiteral("Normal"));
+    c.insertText(QStringLiteral("After the code."), normal);
+    applyContextualSpacing(&doc, firstCode, c.block().previous());
+
+    const QTextBlock mid = firstCode.next();
+    CHECK(firstCode.blockFormat().bottomMargin() == 0 && mid.blockFormat().topMargin() == 0
+              && mid.blockFormat().bottomMargin() == 0 && firstCode.blockFormat().topMargin() > 0,
+          "code lines packed together, space kept around the block");
+
+    // Spelling: code is never checked.
+    spell::SpellChecker::instance().setLanguage(QStringLiteral("en_US"));
+    QStringList checked;
+    for (const spell::Word &w : spell::SpellChecker::checkableWords(doc.begin()))
+        checked << w.text;
+    CHECK(!checked.contains(QStringLiteral("fooo")) && checked.contains(QStringLiteral("sentance")),
+          "inline code skipped by spell check, prose still checked");
+    CHECK(spell::SpellChecker::checkableWords(mid).isEmpty(), "code block skipped by spell check");
+
+    const QByteArray saved = DocxWriter::build(&doc, pkg, &err);
+    if (!keepPath.isEmpty()) {
+        QFile out(keepPath);
+        if (out.open(QIODevice::WriteOnly))
+            out.write(saved);
+    }
+    zip::Reader z;
+    z.open(saved);
+    const QString xml = QString::fromUtf8(z.read(QStringLiteral("word/document.xml")));
+    CHECK(xml.count(QStringLiteral("<w:pStyle w:val=\"Code\"/>")) == 3, "three Code paragraphs written");
+    CHECK(xml.contains(QStringLiteral("<w:rStyle w:val=\"CodeChar\"/>")), "inline code written as CodeChar");
+    CHECK(xml.contains(QStringLiteral("    retrun 0")) && xml.contains(QStringLiteral("<w:tab/><w:t xml:space=\"preserve\">indented")),
+          "code indentation preserved");
+    const int codeAt = xml.indexOf(QStringLiteral("    retrun"));
+    const int codeP = xml.lastIndexOf(QStringLiteral("<w:p>"), codeAt);
+    CHECK(!xml.mid(codeP, codeAt - codeP).contains(QStringLiteral("w:spacing")),
+          "packed code spacing not written as direct formatting");
+
+    QTextDocument back;
+    Package pb;
+    CHECK(DocxReader::loadData(saved, &back, &pb, &err), "code doc reloads");
+    CHECK(qAbs(back.defaultTextOption().tabStopDistance() - 48.0) < 0.01, "default tab stop from settings.xml (0.5in)");
+    const QTextBlock rb = findBlock(back, QStringLiteral("    retrun"));
+    CHECK(rb.blockFormat().stringProperty(PStyle) == QLatin1String("Code") && rb.blockFormat().topMargin() == 0
+              && rb.blockFormat().bottomMargin() == 0,
+          "reloaded code block style and packing");
+    CHECK(fromCharFormat(formatAt(rb, QStringLiteral("retrun"))).font == QLatin1String("Consolas"), "code font kept");
+    CHECK(!rb.blockFormat().stringProperty(BorderLeft).isEmpty() && rb.blockFormat().background().style() != Qt::NoBrush,
+          "code block shading and rule");
+}
+
 static void zipTests()
 {
     QByteArray big;
@@ -628,6 +751,8 @@ int main(int argc, char **argv)
     }
     spellTests();
     spellMenuTest();
+    findReplaceTests();
+    codeTests(keep.isEmpty() ? QString() : keep + QStringLiteral(".code.docx"));
     for (const QString &f : files) {
         roundTripFile(f);
         if (f.endsWith(QLatin1String("features.docx")))

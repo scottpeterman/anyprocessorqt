@@ -27,6 +27,12 @@ RunProps fromCharFormat(const QTextCharFormat &cf);
 void compensateLineHeight(QTextBlockFormat &bf, const QTextCharFormat &dominant);
 QTextCharFormat dominantCharFormat(const QTextBlock &block);
 
+// Re-apply w:contextualSpacing for display around [first, last] (plus one block on
+// each side): paragraphs of the same style with contextual spacing lose the space
+// between them. The docx values stay in SpacingOrig for save. Edits go through
+// cursors, so call inside the caller's edit block.
+void applyContextualSpacing(QTextDocument *doc, const QTextBlock &first, const QTextBlock &last);
+
 // Serialization used to detect whether display-adjusted tab stops were edited.
 QString tabsKey(const QList<QTextOption::Tab> &tabs);
 QString encodeTabStops(const QList<TabStop> &tabs);

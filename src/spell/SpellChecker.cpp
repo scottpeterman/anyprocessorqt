@@ -2,7 +2,11 @@
 
 #include <hunspell.hxx>
 
+#include "docx/Units.h"
+
 #include <QCoreApplication>
+#include <QFontInfo>
+#include <QTextBlock>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -236,6 +240,47 @@ void SpellChecker::ignore(const QString &word)
 {
     m_ignored.insert(word);
     emit changed();
+}
+
+static bool isCodeFormat(const QTextCharFormat &cf)
+{
+    if (cf.stringProperty(docx::RStyle) == QLatin1String("CodeChar"))
+        return true;
+    static QHash<QString, bool> fixedCache;
+    const QStringList fams = cf.fontFamilies().toStringList();
+    const QString key = fams.isEmpty() ? cf.font().family() : fams.first();
+    auto it = fixedCache.constFind(key);
+    if (it != fixedCache.constEnd())
+        return it.value();
+    const bool fixed = QFontInfo(cf.font()).fixedPitch();
+    fixedCache.insert(key, fixed);
+    return fixed;
+}
+
+QList<Word> SpellChecker::checkableWords(const QTextBlock &block)
+{
+    const QString style = block.blockFormat().stringProperty(docx::PStyle);
+    if (style == QLatin1String("Code") || style == QLatin1String("SourceCode") || style == QLatin1String("HTMLPreformatted"))
+        return {};
+    QList<QPair<int, int>> code;  // [start, end) ranges inside the block
+    for (auto it = block.begin(); !it.atEnd(); ++it) {
+        const QTextFragment f = it.fragment();
+        if (f.isValid() && isCodeFormat(f.charFormat()))
+            code.append({f.position() - block.position(), f.position() - block.position() + f.length()});
+    }
+    QList<Word> all = words(block.text());
+    if (code.isEmpty())
+        return all;
+    QList<Word> out;
+    for (const Word &w : all) {
+        bool inCode = false;
+        for (const auto &r : code)
+            if (w.start < r.second && w.start + w.length > r.first)
+                inCode = true;
+        if (!inCode)
+            out.append(w);
+    }
+    return out;
 }
 
 bool SpellChecker::shouldCheck(const QString &word)

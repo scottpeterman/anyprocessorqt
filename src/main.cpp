@@ -39,7 +39,8 @@ static void installFontSubstitutions()
         {"Times New Roman", {QStringLiteral("Liberation Serif"), QStringLiteral("Tinos")}},
         {"Courier New", {QStringLiteral("Liberation Mono"), QStringLiteral("Cousine")}},
         {"Georgia", {QStringLiteral("Gelasio")}},
-        {"Consolas", {QStringLiteral("Inconsolata"), QStringLiteral("Liberation Mono")}},
+        {"Consolas", {QStringLiteral("Menlo"), QStringLiteral("Cousine"), QStringLiteral("DejaVu Sans Mono"),
+                      QStringLiteral("Liberation Mono"), QStringLiteral("Inconsolata"), QStringLiteral("Courier New")}},
     };
     for (const auto &[family, list] : subs)
         QFont::insertSubstitutions(QString::fromLatin1(family), list);

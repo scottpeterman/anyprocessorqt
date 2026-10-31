@@ -118,6 +118,52 @@ QTextCharFormat dominantCharFormat(const QTextBlock &block)
     return best;
 }
 
+static bool sameContainer(QTextDocument *doc, const QTextBlock &a, const QTextBlock &b)
+{
+    return a.isValid() && b.isValid() && doc->frameAt(a.position()) == doc->frameAt(b.position());
+}
+
+void applyContextualSpacing(QTextDocument *doc, const QTextBlock &first, const QTextBlock &last)
+{
+    if (!first.isValid())
+        return;
+    QTextBlock from = first.previous().isValid() ? first.previous() : first;
+    QTextBlock to = last.isValid() && last.next().isValid() ? last.next() : last;
+    for (QTextBlock b = from; b.isValid(); b = b.next()) {
+        QTextBlockFormat bf = b.blockFormat();
+        // Base spacing: the docx value if display adjusted it before, else what's shown.
+        double baseTop = bf.topMargin(), baseBottom = bf.bottomMargin();
+        if (bf.hasProperty(SpacingOrig)) {
+            const QStringList o = bf.stringProperty(SpacingOrig).split(QLatin1Char(','));
+            if (o.size() == 2) {
+                baseTop = twipsToPx(o[0].toInt());
+                baseBottom = twipsToPx(o[1].toInt());
+            }
+        }
+        const QString style = bf.stringProperty(PStyle);
+        const bool ctx = bf.boolProperty(ContextualSpacing);
+        const QTextBlock prev = b.previous(), next = b.next();
+        const bool samePrev = ctx && sameContainer(doc, prev, b) && prev.blockFormat().stringProperty(PStyle) == style;
+        const bool sameNext = ctx && sameContainer(doc, next, b) && next.blockFormat().stringProperty(PStyle) == style;
+        const double top = samePrev ? 0.0 : baseTop;
+        const double bottom = sameNext ? 0.0 : baseBottom;
+        QTextBlockFormat nf = bf;
+        nf.setTopMargin(top);
+        nf.setBottomMargin(bottom);
+        if (top != baseTop || bottom != baseBottom) {
+            nf.setProperty(SpacingOrig, QStringLiteral("%1,%2").arg(pxToTwips(baseTop)).arg(pxToTwips(baseBottom)));
+            nf.setProperty(SpacingShown, QStringLiteral("%1,%2").arg(top, 0, 'f', 3).arg(bottom, 0, 'f', 3));
+        } else {
+            nf.clearProperty(SpacingOrig);
+            nf.clearProperty(SpacingShown);
+        }
+        if (nf != bf)
+            QTextCursor(b).setBlockFormat(nf);
+        if (b == to)
+            break;
+    }
+}
+
 void compensateLineHeight(QTextBlockFormat &bf, const QTextCharFormat &dominant)
 {
     // Recover the docx value first: an earlier compensation may still be in place.

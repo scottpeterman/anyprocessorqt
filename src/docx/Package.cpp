@@ -162,6 +162,14 @@ bool Package::loadFrom(const QByteArray &zipData, QString *error)
             sectPrXml.clear();
     }
 
+    defaultTabStop = 720;
+    const QString settingsPart = partForRelType(QStringLiteral("/settings"));
+    if (!settingsPart.isEmpty()) {
+        if (auto settings = parseXml(parts.value(settingsPart)))
+            if (const XElem *t = settings->child(u"defaultTabStop"))
+                defaultTabStop = qMax(1, t->intAttr(u"val", 720));
+    }
+
     page = PageSetup();
     if (!sectPrXml.isEmpty()) {
         QString wrapped = QStringLiteral("<x xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" "

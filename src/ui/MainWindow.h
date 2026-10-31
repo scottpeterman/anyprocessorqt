@@ -55,8 +55,9 @@ private:
     void insertTable();
     void insertPageBreak();
     void insertHyperlink();
-    void find();
-    void findNext();
+    void toggleCodeBlock();
+    void toggleInlineCode();
+    void fixContextualSpacingAroundCursor();
 
     void setDraftView(bool draft);
     void buildSpellingMenu(QMenu *menu);
@@ -67,7 +68,8 @@ private:
     PageEdit *m_edit = nullptr;
     docx::Package m_pkg;
     QString m_path;
-    QString m_findText;
+    class FindBar *m_findBar = nullptr;
+    int m_lastBlockCount = 0;
 
     QComboBox *m_styleCombo = nullptr;
     QFontComboBox *m_fontCombo = nullptr;
@@ -77,7 +79,8 @@ private:
     bool m_updatingUi = false;
 
     QAction *m_new, *m_open, *m_save, *m_saveAs, *m_exportPdf, *m_print, *m_quit;
-    QAction *m_undo, *m_redo, *m_cut, *m_copy, *m_paste, *m_selectAll, *m_find, *m_findNext;
+    QAction *m_undo, *m_redo, *m_cut, *m_copy, *m_paste, *m_selectAll, *m_find, *m_replace, *m_findNext, *m_findPrev;
+    QAction *m_codeBlock, *m_inlineCode;
     QAction *m_bold, *m_italic, *m_underline, *m_strike, *m_super, *m_sub, *m_color, *m_highlight, *m_clearFmt;
     QAction *m_alignLeft, *m_alignCenter, *m_alignRight, *m_alignJustify;
     QAction *m_bullets, *m_numbers, *m_indentMore, *m_indentLess;
