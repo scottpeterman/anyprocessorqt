@@ -63,6 +63,8 @@ chmod +x anyprocessorqt-*.AppImage
 
 Without FUSE, run it with `--appimage-extract-and-run`. Every release is tested in a stock Debian bookworm container (the ChromeOS Linux base) under both X11 and Wayland.
 
+The x86_64 AppImage bundles Qt 6.10. The aarch64 one bundles Debian bookworm's Qt 6.4.2, because the Qt installer's ARM64 builds need a newer glibc than bookworm has.
+
 ### macOS
 
 Open the DMG and drag anyprocessorqt to Applications. The app is ad-hoc signed, not notarized: the first time, right-click it and choose Open.
