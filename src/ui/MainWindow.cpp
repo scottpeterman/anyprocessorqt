@@ -7,6 +7,7 @@
 #include "ui/FindBar.h"
 #include "ui/InsertTableDialog.h"
 #include "ui/PageEdit.h"
+#include "ui/Theme.h"
 #include "ui/ZoomView.h"
 #include "spell/SpellChecker.h"
 
@@ -124,6 +125,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         buildSpellingMenu(m_languageMenu);
         connect(&sc, &spell::SpellChecker::changed, this, [this] { buildSpellingMenu(m_languageMenu); });
         setDraftView(s.value(QStringLiteral("viewMode")).toString() == QLatin1String("draft"));
+        // The theme itself is applied in main() before any window exists.
+        const theme::Theme t = theme::themeFromString(s.value(QStringLiteral("theme")).toString());
+        (t == theme::Theme::Light ? m_themeLight : t == theme::Theme::Dark ? m_themeDark : m_themeSystem)->setChecked(true);
+        const theme::Paper pp = theme::paperFromString(s.value(QStringLiteral("paper")).toString());
+        (pp == theme::Paper::Dark ? m_paperDark : m_paperWhite)->setChecked(true);
+        refreshColors();
         const QString z = s.value(QStringLiteral("zoom"), QStringLiteral("fit")).toString();
         if (z == QLatin1String("fit"))
             m_zoomView->setFitWidth();
@@ -149,6 +156,37 @@ void MainWindow::setDraftView(bool draft)
     m_edit->setViewMode(draft ? PageEdit::ViewMode::Draft : PageEdit::ViewMode::Page);
     (draft ? m_draftView : m_pageView)->setChecked(true);
     QSettings().setValue(QStringLiteral("viewMode"), draft ? QStringLiteral("draft") : QStringLiteral("page"));
+}
+
+void MainWindow::setTheme(int t)
+{
+    const auto th = theme::Theme(t);
+    theme::apply(th);
+    QSettings().setValue(QStringLiteral("theme"), theme::toString(th));
+    refreshColors();
+}
+
+void MainWindow::setPaper(int p)
+{
+    QSettings().setValue(QStringLiteral("paper"), theme::toString(theme::Paper(p)));
+    refreshColors();
+}
+
+void MainWindow::refreshColors()
+{
+    m_refreshingColors = true;
+    const QColor desk = theme::deskColor();
+    m_edit->setColors(desk, m_paperDark->isChecked() ? theme::Paper::Dark : theme::Paper::White);
+    m_zoomView->setDeskColor(desk);
+    m_refreshingColors = false;
+}
+
+void MainWindow::changeEvent(QEvent *e)
+{
+    // System theme: the platform may switch light/dark while the app runs.
+    if (e->type() == QEvent::ApplicationPaletteChange && !m_refreshingColors)
+        refreshColors();
+    QMainWindow::changeEvent(e);
 }
 
 void MainWindow::buildSpellingMenu(QMenu *menu)
@@ -316,6 +354,24 @@ void MainWindow::buildActions()
     }
     m_pageView->setChecked(true);
 
+    m_themeSystem = mk(tr("&System"), QKeySequence(), [this] { setTheme(int(theme::Theme::System)); });
+    m_themeLight = mk(tr("&Light"), QKeySequence(), [this] { setTheme(int(theme::Theme::Light)); });
+    m_themeDark = mk(tr("&Dark"), QKeySequence(), [this] { setTheme(int(theme::Theme::Dark)); });
+    auto *themeGroup = new QActionGroup(this);
+    for (QAction *a : {m_themeSystem, m_themeLight, m_themeDark}) {
+        a->setCheckable(true);
+        themeGroup->addAction(a);
+    }
+    m_themeSystem->setChecked(true);
+    m_paperWhite = mk(tr("&White Paper"), QKeySequence(), [this] { setPaper(int(theme::Paper::White)); });
+    m_paperDark = mk(tr("&Dark Paper"), QKeySequence(), [this] { setPaper(int(theme::Paper::Dark)); });
+    auto *paperGroup = new QActionGroup(this);
+    for (QAction *a : {m_paperWhite, m_paperDark}) {
+        a->setCheckable(true);
+        paperGroup->addAction(a);
+    }
+    m_paperWhite->setChecked(true);
+
     m_zoomIn = mk(tr("Zoom &In"), QKeySequence::ZoomIn, [this] { m_zoomView->zoomIn(); }, "zoom-in");
     m_zoomIn->setShortcuts({QKeySequence::ZoomIn, QKeySequence(Qt::CTRL | Qt::Key_Equal)});
     m_zoomOut = mk(tr("Zoom &Out"), QKeySequence::ZoomOut, [this] { m_zoomView->zoomOut(); }, "zoom-out");
@@ -362,6 +418,11 @@ void MainWindow::buildMenus()
     view->addActions({m_pageView, m_draftView});
     view->addSeparator();
     view->addActions({m_zoomFit, m_zoom100, m_zoomIn, m_zoomOut});
+    view->addSeparator();
+    QMenu *themeMenu = view->addMenu(tr("&Theme"));
+    themeMenu->addActions({m_themeSystem, m_themeLight, m_themeDark});
+    QMenu *paperMenu = view->addMenu(tr("P&aper"));
+    paperMenu->addActions({m_paperWhite, m_paperDark});
 
     QMenu *format = menuBar()->addMenu(tr("F&ormat"));
     format->addActions({m_bold, m_italic, m_underline, m_strike, m_super, m_sub});

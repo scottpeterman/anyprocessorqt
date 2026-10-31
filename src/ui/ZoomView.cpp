@@ -122,6 +122,11 @@ void ZoomView::zoomOut()
     setZoom(kMin);
 }
 
+void ZoomView::setDeskColor(const QColor &c)
+{
+    setBackgroundBrush(c);
+}
+
 void ZoomView::resizeEvent(QResizeEvent *e)
 {
     QGraphicsView::resizeEvent(e);

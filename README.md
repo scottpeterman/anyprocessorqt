@@ -19,6 +19,7 @@ v0.1.0 — early. It opens, edits and saves real Word documents. Round-trip test
 - **Images:** insert or paste PNG/JPEG/GIF/BMP/WebP, resize by % of text width; original image bytes are kept untouched on save
 - **Hyperlinks:** external links and internal anchors
 - **Views:** Page view (the page exactly as it prints) and Draft view (text wraps to the full window). Zoom scales the page without moving a single line break: Fit Page Width (Ctrl+0, the default) fills the window, Ctrl+= / Ctrl+- and Ctrl+wheel step through 50–400%, and the zoom button in the status bar has presets. Switching views or zooming never touches the document
+- **Theme and paper:** View → Theme sets the app to System, Light or Dark; View → Paper sets White or Dark paper, independently, so dark paper works with either theme. On dark paper, dark text colors (black, theme-colored headings, links) are lightened on screen, and text on a highlight, shading or light cell fill keeps dark ink. Display only: save, print and PDF use the document's real colors on white
 - **Spelling:** check as you type with suggestions, Add to Dictionary and Ignore All on right-click, F7 for the next misspelling. Built-in US English plus any Hunspell dictionaries installed on the system. Acronyms (BGP), mixed-case names (NetBox), words with digits, URLs, paths and file names are skipped, and a built-in list covers common network and software terms
 - **Output:** save `.docx`, export PDF (paginated), print
 - **Fonts:** Calibri, Cambria, Arial, Times New Roman and Courier New fall back to metric-compatible open fonts (Carlito, Caladea, Liberation) when the Microsoft fonts aren't installed, so line breaks match Word. Georgia maps to Gelasio when it's installed.
@@ -111,6 +112,12 @@ anyprocessorqt --render in.docx out.png       # one tall image of the page view
 anyprocessorqt --inspect in.docx              # paragraphs with style, list, border info
 anyprocessorqt --dump in.docx                 # parsed document as Qt HTML
 anyprocessorqt --screenshot out.png in.docx   # editor window screenshot
+```
+
+`--view page|draft`, `--theme system|light|dark` and `--paper white|dark` set (and save) the view, theme and paper for the GUI and `--screenshot`.
+
+```bash
+anyprocessorqt --theme dark --paper dark --screenshot out.png in.docx
 ```
 
 ## Spelling

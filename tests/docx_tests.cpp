@@ -12,6 +12,7 @@
 #include "spell/SpellChecker.h"
 #include "spell/SpellHighlighter.h"
 #include "ui/PageEdit.h"
+#include "ui/Theme.h"
 #include "ui/FindBar.h"
 #include "ui/ZoomView.h"
 #include <QGraphicsProxyWidget>
@@ -27,6 +28,7 @@
 #include <QTimer>
 #include <QStandardPaths>
 #include <QTextLayout>
+#include <memory>
 #include <QImage>
 #include <QPainter>
 #include <QRegularExpression>
@@ -546,6 +548,75 @@ static void viewTests(const QString &file)
           "view switching does not change the saved document");
 }
 
+static QColor shownInk(QTextDocument *doc, int pos)
+{
+    const QTextBlock b = doc->findBlock(pos);
+    for (const QTextLayout::FormatRange &r : b.layout()->formats())
+        if (pos - b.position() >= r.start && pos - b.position() < r.start + r.length && r.format.hasProperty(QTextFormat::ForegroundBrush))
+            return r.format.foreground().color();
+    return QColor();
+}
+
+static void paperTests()
+{
+    using spell::SpellHighlighter;
+    CHECK(SpellHighlighter::onDarkPaper(Qt::black).lightnessF() >= 0.68, "black lightened for dark paper");
+    CHECK(SpellHighlighter::onDarkPaper(QColor(0xFF, 0xE0, 0xA0)) == QColor(0xFF, 0xE0, 0xA0), "light colours kept");
+    const QColor link = SpellHighlighter::onDarkPaper(QColor(0x05, 0x63, 0xC1));
+    CHECK(link.lightnessF() > 0.6 && qAbs(link.hslHueF() - QColor(0x05, 0x63, 0xC1).hslHueF()) < 0.02,
+          "dark colours keep their hue");
+
+    PageEdit edit;
+    Package pkg = Package::blank();
+    QString err;
+    DocxReader::build(pkg, edit.document(), &err);
+    QTextDocument *doc = edit.document();
+    QTextCursor c(doc);
+    const QTextCharFormat base = c.charFormat();
+    c.insertText(QStringLiteral("auto "), base);           // 0..4
+    QTextCharFormat black = base;
+    black.setForeground(QColor(Qt::black));
+    c.insertText(QStringLiteral("black "), black);         // 5..10
+    QTextCharFormat hl = base;
+    hl.setBackground(QColor(Qt::yellow));
+    c.insertText(QStringLiteral("marked"), hl);            // 11..16
+    doc->setModified(false);
+    doc->clearUndoRedoStacks();
+    const QByteArray before = DocxWriter::build(doc, pkg, &err);
+
+    edit.setColors(theme::deskColor(), theme::Paper::Dark);
+    QApplication::processEvents();
+    CHECK(edit.palette().color(QPalette::Base).lightness() < 64, "dark paper base");
+    CHECK(!shownInk(doc, 1).isValid(), "auto text uses the paper ink");
+    CHECK(shownInk(doc, 6).isValid() && shownInk(doc, 6).lightnessF() > 0.6, "explicit black shown light");
+    CHECK(shownInk(doc, 12) == QColor(Qt::black), "text on a highlight keeps dark ink");
+    CHECK(!doc->isModified() && !doc->isUndoAvailable(), "dark paper leaves document unmodified");
+    zip::Reader a, b;
+    a.open(before);
+    b.open(DocxWriter::build(doc, pkg, &err));
+    CHECK(a.read(QStringLiteral("word/document.xml")) == b.read(QStringLiteral("word/document.xml")),
+          "dark paper does not change the saved document");
+    std::unique_ptr<QTextDocument> clone(doc->clone());
+    CHECK(clone->findBlock(6).layout()->formats().isEmpty(), "print copy carries no display ink");
+
+    edit.setColors(theme::deskColor(), theme::Paper::White);
+    QApplication::processEvents();
+    CHECK(!shownInk(doc, 6).isValid(), "white paper drops the display ink");
+    CHECK(edit.palette().color(QPalette::Base) == QColor(Qt::white), "white paper base");
+
+    const QPalette sys = QApplication::palette();
+    theme::captureSystem();
+    theme::apply(theme::Theme::Dark);
+    CHECK(theme::appIsDark() && theme::deskColor().lightness() < 100, "dark theme");
+    theme::apply(theme::Theme::Light);
+    CHECK(!theme::appIsDark(), "light theme");
+    theme::apply(theme::Theme::System);
+    CHECK(QApplication::palette().color(QPalette::Window) == sys.color(QPalette::Window), "system theme restored");
+    CHECK(theme::themeFromString(QStringLiteral("bogus")) == theme::Theme::System
+              && theme::paperFromString(theme::toString(theme::Paper::Dark)) == theme::Paper::Dark,
+          "theme settings strings");
+}
+
 static void spellMenuTest()
 {
     PageEdit edit;
@@ -842,6 +913,7 @@ int main(int argc, char **argv)
     }
     spellTests();
     spellMenuTest();
+    paperTests();
     findReplaceTests();
     codeTests(keep.isEmpty() ? QString() : keep + QStringLiteral(".code.docx"));
     for (const QString &f : files) {

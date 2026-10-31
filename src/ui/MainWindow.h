@@ -24,6 +24,7 @@ public:
 
 protected:
     void closeEvent(QCloseEvent *e) override;
+    void changeEvent(QEvent *e) override;
 
 private:
     void buildActions();
@@ -60,6 +61,9 @@ private:
     void fixContextualSpacingAroundCursor();
 
     void setDraftView(bool draft);
+    void setTheme(int theme);   // theme::Theme
+    void setPaper(int paper);   // theme::Paper
+    void refreshColors();
     void buildSpellingMenu(QMenu *menu);
 
     void updateFormatUi();
@@ -92,5 +96,7 @@ private:
     QAction *m_about;
     QAction *m_pageView, *m_draftView, *m_spellAsYouType, *m_nextMisspelling;
     QAction *m_zoomIn, *m_zoomOut, *m_zoomFit, *m_zoom100;
+    QAction *m_themeSystem, *m_themeLight, *m_themeDark, *m_paperWhite, *m_paperDark;
+    bool m_refreshingColors = false;
     QMenu *m_languageMenu = nullptr;
 };
