@@ -436,6 +436,8 @@ void MainWindow::buildActions()
             statusBar()->showMessage(tr("No misspellings found"), 3000);
     });
 
+    m_aboutQt = mk(tr("About &Qt"), QKeySequence(), [this] { QMessageBox::aboutQt(this); });
+    m_aboutQt->setMenuRole(QAction::AboutQtRole);
     m_about = mk(tr("&About anyprocessorqt"), QKeySequence(), [this] {
         QMessageBox::about(this, tr("About anyprocessorqt"),
                            tr("<b>anyprocessorqt %1</b><br>A lightweight DOCX word processor in Qt.<br><br>"
@@ -514,6 +516,7 @@ void MainWindow::buildMenus()
 
     QMenu *help = menuBar()->addMenu(tr("&Help"));
     help->addAction(m_about);
+    help->addAction(m_aboutQt);
 }
 
 void MainWindow::buildToolbars()

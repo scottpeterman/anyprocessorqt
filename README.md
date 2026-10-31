@@ -8,6 +8,16 @@ Scope is deliberate: everyday word processing — fonts and paragraph formatting
 
 v0.1.0 — early. It opens, edits and saves real Word documents. Round-trip tests cover style-heavy resumes, long-form documents with images and callouts, and Word-template fixtures. See [What's preserved](#whats-preserved) before trusting it with documents that use tracked changes or comments.
 
+## Screenshots
+
+| Light theme, white paper | Dark theme, dark paper |
+|---|---|
+| ![Light theme with white paper](docs/screenshots/light.png) | ![Dark theme with dark paper](docs/screenshots/dark.png) |
+
+![Page view at 50%: separate sheets with header, footer and page numbers](docs/screenshots/pages.png)
+
+The sample document comes from `tools/make_screenshot_doc.py`; each image is one `--screenshot` run (see [Command-line tools](#command-line-tools)).
+
 ## Features
 
 - **Text:** font family and size, bold, italic, underline, strikethrough, superscript/subscript, color, highlight, clear formatting
@@ -23,6 +33,7 @@ v0.1.0 — early. It opens, edits and saves real Word documents. Round-trip test
 - **Spelling:** check as you type with suggestions, Add to Dictionary and Ignore All on right-click, F7 for the next misspelling. Built-in US English plus any Hunspell dictionaries installed on the system. Acronyms (BGP), mixed-case names (NetBox), words with digits, URLs, paths and file names are skipped, and a built-in list covers common network and software terms
 - **Headers and footers:** shown on every page in Page view (dimmed, like Word), with page numbers and page counts filled in; different first page and even/odd pages are honoured. Double-click a page's top or bottom margin, or use Insert → Header & Footer…, to edit them: text with alignment, bold/italic, tab stops and `{PAGE}` / `{NUMPAGES}` fields, plus a Different first page switch. Headers with images, tables or other fields are kept exactly as they are and shown read-only
 - **Files:** File → Open Recent lists the last ten documents (missing ones greyed out), with Clear List
+- **Help:** About anyprocessorqt and About Qt (Qt version and license)
 - **Output:** save `.docx`, export PDF and print with headers, footers and paragraph borders, page for page as Page view
 - **Fonts:** Calibri, Cambria, Arial, Times New Roman and Courier New fall back to metric-compatible open fonts (Carlito, Caladea, Liberation) when the Microsoft fonts aren't installed, so line breaks match Word. Georgia maps to Gelasio when it's installed.
 
