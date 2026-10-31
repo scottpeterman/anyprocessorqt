@@ -177,7 +177,7 @@ bool PageEdit::selectNextMisspelling()
         for (; b.isValid(); b = b.next()) {
             if (pass == 1 && b.position() > startBlock.position())
                 break;
-            for (const spell::Word &w : spell::SpellChecker::words(b.text())) {
+            for (const spell::Word &w : spell::SpellChecker::checkableWords(b)) {
                 const int abs = b.position() + w.start;
                 if (pass == 0 && b == startBlock && abs < from)
                     continue;
@@ -203,7 +203,7 @@ void PageEdit::contextMenuEvent(QContextMenuEvent *e)
     const QTextBlock block = at.block();
     const int offset = at.position() - block.position();
     if (sc.isEnabled() && sc.isLoaded() && !textCursor().hasSelection()) {
-        for (const spell::Word &w : spell::SpellChecker::words(block.text())) {
+        for (const spell::Word &w : spell::SpellChecker::checkableWords(block)) {
             if (offset < w.start || offset > w.start + w.length || sc.isCorrect(w.text))
                 continue;
             const int start = block.position() + w.start;
@@ -256,6 +256,16 @@ bool PageEdit::canInsertFromMimeData(const QMimeData *source) const
 
 void PageEdit::insertFromMimeData(const QMimeData *source)
 {
+    // Inside a code block, paste plain text so indentation survives and no
+    // outside formatting comes along. Newlines become new Code paragraphs.
+    if (source->hasText() && textCursor().blockFormat().stringProperty(PStyle) == QLatin1String("Code")) {
+        QString text = source->text();
+        text.replace(QLatin1String("\r\n"), QLatin1String("\n"));
+        text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+        QTextCursor c = textCursor();
+        c.insertText(text, c.blockCharFormat());
+        return;
+    }
     if (source->hasImage() && !source->hasHtml()) {
         QImage img = qvariant_cast<QImage>(source->imageData());
         if (img.isNull())

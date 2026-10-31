@@ -12,6 +12,7 @@
 #include <QTextDocument>
 #include <QTextFrame>
 #include <QTextList>
+#include <QTextOption>
 #include <QTextTable>
 #include <QUrl>
 
@@ -552,6 +553,11 @@ struct Ctx {
 void DocxReader::applyPageSetup(const Package &pkg, QTextDocument *doc)
 {
     doc->setIndentWidth(48.0);  // 0.5 inch per list/indent level, Word's default step
+    // Plain tabs advance to the document's default tab stop (Word: 0.5"), not Qt's 80px.
+    // A document property, not a format: no undo entry, no modified flag.
+    QTextOption opt = doc->defaultTextOption();
+    opt.setTabStopDistance(twipsToPx(pkg.defaultTabStop));
+    doc->setDefaultTextOption(opt);
     doc->setDocumentMargin(0);
     QTextFrameFormat ff = doc->rootFrame()->frameFormat();
     ff.setLeftMargin(twipsToPx(pkg.page.left));

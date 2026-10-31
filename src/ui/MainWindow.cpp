@@ -1,8 +1,10 @@
 #include "ui/MainWindow.h"
+#include "docx/CodeStyles.h"
 #include "docx/Convert.h"
 #include "docx/DocxReader.h"
 #include "docx/DocxWriter.h"
 #include "docx/Units.h"
+#include "ui/FindBar.h"
 #include "ui/InsertTableDialog.h"
 #include "ui/PageEdit.h"
 #include "spell/SpellChecker.h"
@@ -39,6 +41,7 @@
 #include <QToolBar>
 #include <QUrl>
 #include <QUuid>
+#include <QVBoxLayout>
 
 #include <memory>
 
@@ -55,7 +58,14 @@ static QIcon themed(const char *name, QStyle::StandardPixmap fallback = QStyle::
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
     m_edit = new PageEdit(this);
-    setCentralWidget(m_edit);
+    auto *central = new QWidget(this);
+    auto *layout = new QVBoxLayout(central);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    layout->addWidget(m_edit, 1);
+    m_findBar = new FindBar(m_edit, central);
+    layout->addWidget(m_findBar);
+    setCentralWidget(central);
 
     buildActions();
     buildMenus();
@@ -71,6 +81,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     connect(m_edit, &QTextEdit::currentCharFormatChanged, this, [this] { updateFormatUi(); });
     connect(m_edit, &QTextEdit::cursorPositionChanged, this, [this] { updateFormatUi(); });
     connect(m_edit->document(), &QTextDocument::contentsChanged, m_countTimer, qOverload<>(&QTimer::start));
+    // Enter in a code block or list: keep same-style paragraphs packed (contextual spacing).
+    connect(m_edit->document(), &QTextDocument::blockCountChanged, this, [this](int count) {
+        const bool grew = count > m_lastBlockCount;
+        m_lastBlockCount = count;
+        // Loading runs with undo disabled; only react to the user's own edits.
+        if (grew && m_edit->document()->isUndoRedoEnabled())
+            QTimer::singleShot(0, this, &MainWindow::fixContextualSpacingAroundCursor);
+    });
     connect(m_edit->document(), &QTextDocument::modificationChanged, this, &QWidget::setWindowModified);
     connect(m_edit->document(), &QTextDocument::undoAvailable, m_undo, &QAction::setEnabled);
     connect(m_edit->document(), &QTextDocument::redoAvailable, m_redo, &QAction::setEnabled);
@@ -152,8 +170,13 @@ void MainWindow::buildActions()
     m_copy = mk(tr("&Copy"), QKeySequence::Copy, [this] { m_edit->copy(); }, "edit-copy");
     m_paste = mk(tr("&Paste"), QKeySequence::Paste, [this] { m_edit->paste(); }, "edit-paste");
     m_selectAll = mk(tr("Select &All"), QKeySequence::SelectAll, [this] { m_edit->selectAll(); });
-    m_find = mk(tr("&Find…"), QKeySequence::Find, [this] { find(); }, "edit-find");
-    m_findNext = mk(tr("Find &Next"), QKeySequence::FindNext, [this] { findNext(); });
+    m_find = mk(tr("&Find…"), QKeySequence::Find, [this] { m_findBar->showFind(); }, "edit-find");
+    m_replace = mk(tr("&Replace…"), QKeySequence(Qt::CTRL | Qt::Key_H), [this] { m_findBar->showReplace(); },
+                   "edit-find-replace");
+    m_findNext = mk(tr("Find &Next"), QKeySequence(Qt::Key_F3), [this] { m_findBar->findNext(); });
+    m_findPrev = mk(tr("Find Pre&vious"), QKeySequence(Qt::SHIFT | Qt::Key_F3), [this] { m_findBar->findPrevious(); });
+    m_codeBlock = mk(tr("&Code Block"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_C), [this] { toggleCodeBlock(); });
+    m_inlineCode = mk(tr("Inline Co&de"), QKeySequence(Qt::CTRL | Qt::Key_QuoteLeft), [this] { toggleInlineCode(); });
 
     m_bold = mk(tr("&Bold"), QKeySequence::Bold, [this] {
         QTextCharFormat f;
@@ -292,7 +315,7 @@ void MainWindow::buildMenus()
     edit->addSeparator();
     edit->addActions({m_cut, m_copy, m_paste, m_selectAll});
     edit->addSeparator();
-    edit->addActions({m_find, m_findNext});
+    edit->addActions({m_find, m_replace, m_findNext, m_findPrev});
 
     QMenu *view = menuBar()->addMenu(tr("&View"));
     view->addActions({m_pageView, m_draftView});
@@ -301,6 +324,8 @@ void MainWindow::buildMenus()
     format->addActions({m_bold, m_italic, m_underline, m_strike, m_super, m_sub});
     format->addSeparator();
     format->addActions({m_color, m_highlight, m_clearFmt});
+    format->addSeparator();
+    format->addActions({m_codeBlock, m_inlineCode});
     format->addSeparator();
     format->addActions({m_alignLeft, m_alignCenter, m_alignRight, m_alignJustify});
     format->addSeparator();
@@ -390,6 +415,8 @@ void MainWindow::buildToolbars()
     para->addSeparator();
     para->addActions({m_bullets, m_numbers, m_indentLess, m_indentMore});
     para->addSeparator();
+    para->addActions({m_codeBlock, m_inlineCode});
+    para->addSeparator();
     para->addActions({m_insImage, m_insTable});
 
     // Text fallbacks where the platform has no icon theme (Windows, macOS).
@@ -402,6 +429,7 @@ void MainWindow::buildToolbars()
         {m_alignJustify, QStringLiteral("Justify")}, {m_bullets, QStringLiteral("•")},
         {m_numbers, QStringLiteral("1.")}, {m_indentLess, QStringLiteral("⇤")}, {m_indentMore, QStringLiteral("⇥")},
         {m_insImage, QStringLiteral("Image")}, {m_insTable, QStringLiteral("Table")},
+        {m_codeBlock, QStringLiteral("{ }")}, {m_inlineCode, QStringLiteral("`code`")},
         {m_undo, QStringLiteral("Undo")}, {m_redo, QStringLiteral("Redo")},
     };
     for (const auto &[a, text] : fallbackText)
@@ -945,27 +973,98 @@ void MainWindow::insertHyperlink()
     }
 }
 
-void MainWindow::find()
+void MainWindow::toggleCodeBlock()
 {
-    bool ok = false;
-    const QString t = QInputDialog::getText(this, tr("Find"), tr("Find:"), QLineEdit::Normal, m_findText, &ok);
-    if (!ok || t.isEmpty())
+    if (!docx::code::ensureStyles(m_pkg))
         return;
-    m_findText = t;
-    findNext();
+    rebuildStyleCombo();
+    QTextCursor c = m_edit->textCursor();
+    QTextDocument *doc = m_edit->document();
+    const QTextBlock first = doc->findBlock(c.selectionStart());
+    const QTextBlock last = doc->findBlock(c.selectionEnd());
+    bool allCode = true;
+    for (QTextBlock b = first; b.isValid(); b = b.next()) {
+        if (b.blockFormat().stringProperty(PStyle) != QLatin1String(docx::code::kBlockStyle))
+            allCode = false;
+        if (b == last)
+            break;
+    }
+    c.beginEditBlock();
+    if (!allCode) {
+        // Code lines aren't list items.
+        for (QTextBlock b = first; b.isValid(); b = b.next()) {
+            if (QTextList *l = b.textList())
+                l->remove(b);
+            if (b == last)
+                break;
+        }
+    }
+    applyParagraphStyle(allCode ? m_pkg.styles.defaultParagraphStyle() : QString::fromLatin1(docx::code::kBlockStyle));
+    docx::applyContextualSpacing(doc, first, last);
+    c.endEditBlock();
 }
 
-void MainWindow::findNext()
+void MainWindow::toggleInlineCode()
 {
-    if (m_findText.isEmpty()) {
-        find();
+    if (!docx::code::ensureStyles(m_pkg))
         return;
+    QTextCursor c = m_edit->textCursor();
+    if (!c.hasSelection())
+        c.select(QTextCursor::WordUnderCursor);
+    if (!c.hasSelection())
+        return;
+    QTextDocument *doc = m_edit->document();
+    const int start = c.selectionStart(), end = c.selectionEnd();
+    const QString codeId = QString::fromLatin1(docx::code::kInlineStyle);
+    // On if any part of the selection isn't inline code yet.
+    bool allCode = true;
+    for (QTextBlock b = doc->findBlock(start); b.isValid() && b.position() < end; b = b.next())
+        for (auto it = b.begin(); !it.atEnd(); ++it) {
+            const QTextFragment f = it.fragment();
+            if (f.position() + f.length() > start && f.position() < end && f.charFormat().stringProperty(RStyle) != codeId)
+                allCode = false;
+        }
+    const RunProps codeRun = m_pkg.styles.charStyleRun(codeId);
+    c.beginEditBlock();
+    for (QTextBlock b = doc->findBlock(start); b.isValid() && b.position() < end; b = b.next()) {
+        QString styleId = b.blockFormat().stringProperty(PStyle);
+        if (styleId.isEmpty())
+            styleId = m_pkg.styles.defaultParagraphStyle();
+        const RunProps paraRun = m_pkg.styles.resolvedParaRun(styleId);
+        for (auto it = b.begin(); !it.atEnd(); ++it) {
+            const QTextFragment frag = it.fragment();
+            const int fs = qMax(start, frag.position()), fe = qMin(end, frag.position() + frag.length());
+            if (fs >= fe || frag.charFormat().isImageFormat())
+                continue;
+            QTextCharFormat f = frag.charFormat();
+            if (allCode) {
+                f.clearProperty(RStyle);
+                f.setFontFamilies(QStringList{paraRun.font.value_or(QString::fromLatin1(kDefaultFont))});
+                f.clearBackground();
+            } else {
+                f.setProperty(RStyle, codeId);
+                f.setFontFamilies(QStringList{codeRun.font.value_or(QString::fromLatin1(docx::code::kFont))});
+                if (codeRun.shd && !codeRun.shd->isEmpty())
+                    f.setBackground(QColor(QLatin1Char('#') + *codeRun.shd));
+            }
+            QTextCursor fc(doc);
+            fc.setPosition(fs);
+            fc.setPosition(fe, QTextCursor::KeepAnchor);
+            fc.setCharFormat(f);
+        }
     }
-    if (!m_edit->find(m_findText)) {
-        m_edit->moveCursor(QTextCursor::Start);
-        if (!m_edit->find(m_findText))
-            statusBar()->showMessage(tr("\"%1\" not found").arg(m_findText), 3000);
-    }
+    c.endEditBlock();
+}
+
+void MainWindow::fixContextualSpacingAroundCursor()
+{
+    const QTextBlock b = m_edit->textCursor().block();
+    if (!b.blockFormat().boolProperty(ContextualSpacing) && !b.previous().blockFormat().boolProperty(ContextualSpacing))
+        return;
+    QTextCursor c(m_edit->document());
+    c.joinPreviousEditBlock();  // part of the Enter keystroke's undo step
+    docx::applyContextualSpacing(m_edit->document(), b, b);
+    c.endEditBlock();
 }
 
 // ---------------------------------------------------------------------- ui

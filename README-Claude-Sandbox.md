@@ -38,6 +38,8 @@ Every CLI mode (`--roundtrip`, `--render`, `--pdf`, `--inspect`, `--dump`, `--sc
 - Qt rounds root-frame margins to whole pixels, so a right tab exactly on the margin wraps when the margin isn't a whole number of px (0.55in = 52.8px). Tabs and contextual spacing are adjusted for display and the original docx values kept on the block (`TabsOrig`, `SpacingOrig`) for save.
 - Changing the root frame's format (e.g. margins) is an undoable edit and sets the modified flag. Draft view therefore never touches it: it widens the wrap width and shifts the viewport with negative margins so the page margins sit off-screen.
 - `QSyntaxHighlighter::rehighlight()` sets the document's modified flag (no undo step). Use `SpellHighlighter::recheck()`, which restores it.
+- `QTextDocument::availableUndoSteps()` counts internal commands, not user-visible steps: an edit block of several changes reports more than 1 but undoes in one `undo()`. Test single-step undo with `undo()` then `!isUndoAvailable()`.
+- A Qt table cell's format and a block's format live in the document; display-only state (find highlights, spell underlines) goes in `QTextEdit::setExtraSelections` and `QSyntaxHighlighter`.
 - The tests run with `QStandardPaths::setTestModeEnabled(true)`, so the personal dictionary they write lands under `~/.qttest`, not the real app data.
 - QDom on Qt 6.4 drops whitespace-only text nodes (single-space `<w:t>` runs). The reader uses its own tree on `QXmlStreamReader` (`src/docx/Xml.h`).
 

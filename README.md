@@ -14,6 +14,8 @@ v0.1.0 — early. It opens, edits and saves real Word documents. Round-trip test
 - **Paragraphs:** paragraph styles from the document (Normal, Title, Heading 1–n, List Paragraph, custom), alignment, indent, line spacing, spacing before/after, tab stops, paragraph borders (e.g. left-rule callouts), shading, page breaks
 - **Lists:** bulleted and numbered, nested levels, Word style-driven lists (List Bullet / List Number), contextual spacing
 - **Tables:** insert, add/remove rows and columns, merge/split cells; horizontal and vertical merges, cell shading and borders survive round-trips
+- **Code:** Code Block (Ctrl+Alt+C) and Inline Code (Ctrl+`). They're real named styles ("Code", "Inline Code") added to the document when first used: monospace, shaded, consecutive code lines packed together. Pasting into a code block keeps plain text and indentation, and spell check skips code
+- **Find & Replace:** Ctrl+F / Ctrl+H open a bar under the editor with Match case, Whole words, Previous/Next (Shift+F3 / F3), Replace and Replace All; matches are counted and highlighted. Replacements keep the replaced text's formatting, and Replace All is one undo step
 - **Images:** insert or paste PNG/JPEG/GIF/BMP/WebP, resize by % of text width; original image bytes are kept untouched on save
 - **Hyperlinks:** external links and internal anchors
 - **Views:** Page view (the page at its real width) and Draft view (text wraps to the full window for writing); switching never touches the document
@@ -135,7 +137,7 @@ Builds a document the way the editor does (styles, lists, nested levels, tables 
 
 - Page view with visible page boundaries (PDF export already paginates)
 - Header/footer display and editing
-- Find and replace dialog
+- Regular-expression search
 - More bundled spelling dictionaries
 - Table properties dialog (borders, widths, alignment)
 

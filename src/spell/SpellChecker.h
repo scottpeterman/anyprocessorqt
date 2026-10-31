@@ -9,6 +9,7 @@
 #include <memory>
 
 class Hunspell;
+class QTextBlock;
 
 namespace spell {
 
@@ -50,6 +51,8 @@ public:
     // and mixed-case names (NetBox), anything with digits or underscores, and
     // whole tokens that look like URLs, paths, emails or file names.
     static QList<Word> words(const QString &text);
+    // words() for a document block, minus text in a monospace font or a code style.
+    static QList<Word> checkableWords(const QTextBlock &block);
     static bool shouldCheck(const QString &word);
 
     QString personalDictionaryPath() const;

@@ -35,6 +35,7 @@ struct Package {
     QString rootStartTag;  // original <w:document ...> start tag, namespaces intact
     QString sectPrXml;     // original body-level <w:sectPr> verbatim
     PageSetup page;
+    int defaultTabStop = 720;  // twips, from settings.xml w:defaultTabStop
 
     Styles styles;
     Numbering numbering;

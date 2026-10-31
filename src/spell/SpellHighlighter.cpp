@@ -28,7 +28,8 @@ void SpellHighlighter::highlightBlock(const QString &text)
     QTextCharFormat bad;
     bad.setUnderlineStyle(QTextCharFormat::SpellCheckUnderline);
     bad.setUnderlineColor(QColor(0xD0, 0x21, 0x21));
-    for (const Word &w : SpellChecker::words(text))
+    Q_UNUSED(text);
+    for (const Word &w : SpellChecker::checkableWords(currentBlock()))
         if (!sc.isCorrect(w.text))
             setFormat(w.start, w.length, bad);
 }
