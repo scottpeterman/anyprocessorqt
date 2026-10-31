@@ -422,7 +422,12 @@ struct Writer {
             const QString rs = cf.stringProperty(RStyle);
             if (!rs.isEmpty())
                 base.merge(pkg.styles.charStyleRun(rs));
+            const QString field = cf.stringProperty(FieldInstr);
+            if (!field.isEmpty())
+                out += QStringLiteral("<w:fldSimple w:instr=\" %1 \\* MERGEFORMAT \">").arg(field);
             textRuns(frag.text(), rPr(cf, base, true));
+            if (!field.isEmpty())
+                out += QStringLiteral("</w:fldSimple>");
         }
         if (!openHref.isEmpty())
             out += QStringLiteral("</w:hyperlink>");
@@ -815,6 +820,21 @@ QByteArray DocxWriter::build(QTextDocument *doc, Package &pkg, QString *error)
         pkg = updated;
     }
     return zipped;
+}
+
+QByteArray DocxWriter::buildPart(QTextDocument *doc, Package &pkg, bool footer)
+{
+    Writer w(doc, pkg);
+    w.frame(doc->rootFrame());
+    const QString tag = footer ? QStringLiteral("w:ftr") : QStringLiteral("w:hdr");
+    QString body = w.out;
+    if (body.isEmpty())
+        body = QStringLiteral("<w:p/>");
+    return (QStringLiteral("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<%1 xmlns:w=\"%2\" "
+                           "xmlns:r=\"%3\">")
+                .arg(tag, kNsW, kNsR)
+            + body + QStringLiteral("</%1>").arg(tag))
+        .toUtf8();
 }
 
 bool DocxWriter::saveFile(const QString &path, QTextDocument *doc, Package &pkg, QString *error)

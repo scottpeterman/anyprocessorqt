@@ -21,7 +21,8 @@ v0.1.0 — early. It opens, edits and saves real Word documents. Round-trip test
 - **Views:** Page view (separate sheets, paginated exactly as print and PDF: same page breaks, same lines on each page; the status bar shows "Page N of M") and Draft view (text wraps to the full window). Zoom scales the page without moving a single line break: Fit Page Width (Ctrl+0, the default) fills the window, Ctrl+= / Ctrl+- and Ctrl+wheel step through 50–400%, and the zoom button in the status bar has presets. Switching views or zooming never touches the document
 - **Theme and paper:** View → Theme sets the app to System, Light or Dark; View → Paper sets White or Dark paper, independently, so dark paper works with either theme. On dark paper, dark text colors (black, theme-colored headings, links) are lightened on screen, light gray shading (code blocks, inline code) turns into a dark card, and text on other highlights, shading or light cell fills keeps dark ink. Display only: save, print and PDF use the document's real colors on white
 - **Spelling:** check as you type with suggestions, Add to Dictionary and Ignore All on right-click, F7 for the next misspelling. Built-in US English plus any Hunspell dictionaries installed on the system. Acronyms (BGP), mixed-case names (NetBox), words with digits, URLs, paths and file names are skipped, and a built-in list covers common network and software terms
-- **Output:** save `.docx`, export PDF (paginated), print
+- **Headers and footers:** shown on every page in Page view (dimmed, like Word), with page numbers and page counts filled in; different first page and even/odd pages are honoured. Double-click a page's top or bottom margin, or use Insert → Header & Footer…, to edit them: text with alignment, bold/italic, tab stops and `{PAGE}` / `{NUMPAGES}` fields, plus a Different first page switch. Headers with images, tables or other fields are kept exactly as they are and shown read-only
+- **Output:** save `.docx`, export PDF and print with headers, footers and paragraph borders, page for page as Page view
 - **Fonts:** Calibri, Cambria, Arial, Times New Roman and Courier New fall back to metric-compatible open fonts (Carlito, Caladea, Liberation) when the Microsoft fonts aren't installed, so line breaks match Word. Georgia maps to Gelasio when it's installed.
 
 ## How saving works
@@ -135,14 +136,13 @@ Other languages: install a Hunspell dictionary (`sudo apt install hunspell-de-de
 ## Tests
 
 ```bash
-./build/anyprocessorqt_tests tests/fixtures/features.docx [more.docx ...]
+./build/anyprocessorqt_tests tests/fixtures/features.docx tests/fixtures/headers.docx [more.docx ...]
 ```
 
 Builds a document the way the editor does (styles, lists, nested levels, tables with merges and shading, images, links, highlight, breaks), saves it twice and checks that everything reloads and that numbering and media don't accumulate. Each extra file is round-tripped and compared block by block. `tools/compare_docx.py` gives an independent comparison through python-docx; `tools/make_fixture.py` regenerates the fixture.
 
 ## Roadmap
 
-- Header/footer display and editing
 - Regular-expression search
 - More bundled spelling dictionaries
 - Table properties dialog (borders, widths, alignment)

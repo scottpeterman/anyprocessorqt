@@ -13,6 +13,12 @@
 #include "spell/SpellHighlighter.h"
 #include "ui/PageEdit.h"
 #include "ui/Theme.h"
+#include "ui/HeaderFooterDialog.h"
+#include "docx/HeaderFooter.h"
+#include <QPdfWriter>
+#include <QBuffer>
+#include <QPageLayout>
+#include <QPageSize>
 #include <QScrollBar>
 #include "ui/FindBar.h"
 #include "ui/ZoomView.h"
@@ -730,6 +736,141 @@ static void pageTests(const QString &fixture)
     }
 }
 
+static QString docText(QTextDocument *d)
+{
+    return d ? d->toPlainText() : QString();
+}
+
+static int pdfPages(const QByteArray &pdf)
+{
+    static const QRegularExpression re(QStringLiteral("/Type\\s*/Page[^s]"));
+    int n = 0;
+    auto it = re.globalMatch(QString::fromLatin1(pdf));
+    while (it.hasNext()) {
+        it.next();
+        ++n;
+    }
+    return n;
+}
+
+static void headerFooterTests(const QString &file)
+{
+    Package pkg;
+    QTextDocument body;
+    QString err;
+    if (!DocxReader::loadFile(file, &body, &pkg, &err)) {
+        CHECK(false, "headers fixture loads");
+        return;
+    }
+    CHECK(pkg.hdrFtr.size() == 3 && pkg.titlePg, "header/footer references and titlePg parsed");
+    CHECK(pkg.page.header == 720 && pkg.page.footer == 720, "header/footer distances parsed");
+    HeaderFooters hf;
+    hf.load(pkg);
+    CHECK(hf.typeForPage(0) == QLatin1String("first") && hf.typeForPage(1) == QLatin1String("default")
+              && hf.typeForPage(2) == QLatin1String("default"),
+          "first page uses the first-page header");
+    QTextDocument *hdr = hf.doc(false, QStringLiteral("default"));
+    CHECK(docText(hdr).startsWith(QLatin1String("Fixture Report")), "default header text");
+    CHECK(docText(hf.doc(false, QStringLiteral("first"))) == QLatin1String("FIRST PAGE HEADER"), "first-page header text");
+    CHECK(!hf.doc(true, QStringLiteral("first")), "no first-page footer: page one footer is blank");
+    if (hdr) {
+        std::unique_ptr<QTextDocument> c(hdr->clone());
+        HeaderFooters::fillFields(c.get(), 3, 5);
+        CHECK(c->toPlainText().endsWith(QLatin1String("Page 3 of 5")), "complex PAGE / NUMPAGES fields filled");
+    }
+    if (QTextDocument *ftr = hf.doc(true, QStringLiteral("default"))) {
+        std::unique_ptr<QTextDocument> c(ftr->clone());
+        HeaderFooters::fillFields(c.get(), 4, 5);
+        CHECK(c->toPlainText() == QLatin1String("- 4 -"), "simple PAGE field filled");
+    }
+    CHECK(hf.editable(false, QStringLiteral("default")) && hf.editable(true, QStringLiteral("default")),
+          "text + PAGE fields are editable");
+    CHECK(!HeaderFooters::isTextOnly("<w:hdr><w:p><w:r><w:drawing/></w:r></w:p></w:hdr>")
+              && !HeaderFooters::isTextOnly("<w:hdr><w:p><w:fldSimple w:instr=\" DATE \"/></w:p></w:hdr>"),
+          "images and other fields are read-only");
+
+    // Save keeps the parts untouched.
+    Package saved = pkg;
+    const QByteArray out = DocxWriter::build(&body, saved, &err);
+    Package back;
+    CHECK(back.loadFrom(out, &err) && back.hdrFtr.size() == 3 && back.titlePg, "headers survive save");
+    bool sameParts = true;
+    for (const HdrFtrRef &r : pkg.hdrFtr)
+        if (back.parts.value(r.part) != pkg.parts.value(r.part))
+            sameParts = false;
+    CHECK(sameParts, "header/footer parts saved byte-for-byte");
+
+    // Print/PDF draws every page with headers.
+    QBuffer buf;
+    buf.open(QIODevice::WriteOnly);
+    {
+        QPdfWriter pdf(&buf);
+        pdf.setPageLayout(QPageLayout(QPageSize(QSizeF(pkg.page.width / 1440.0, pkg.page.height / 1440.0), QPageSize::Inch),
+                                      QPageLayout::Portrait, QMarginsF(0, 0, 0, 0)));
+        PageEdit::printPages(&body, pkg.page, &hf, &pdf);
+    }
+    std::unique_ptr<QTextDocument> paged(body.clone());
+    paged->setPageSize(QSizeF(twipsToPx(pkg.page.width), twipsToPx(pkg.page.height)));
+    CHECK(paged->pageCount() >= 3 && pdfPages(buf.data()) == paged->pageCount(),
+          qPrintable(QStringLiteral("PDF has every page (%1 of %2)").arg(pdfPages(buf.data())).arg(paged->pageCount())));
+
+    // Tokens <-> fields.
+    {
+        std::unique_ptr<QTextDocument> c(hdr ? hdr->clone() : new QTextDocument);
+        HeaderFooterDialog::fieldsToTokens(c.get());
+        CHECK(c->toPlainText().endsWith(QLatin1String("Page {PAGE} of {NUMPAGES}")), "fields shown as tokens");
+        HeaderFooterDialog::tokensToFields(c.get());
+        HeaderFooters::fillFields(c.get(), 2, 9);
+        CHECK(c->toPlainText().endsWith(QLatin1String("Page 2 of 9")), "tokens become fields again");
+    }
+
+    // New header and footer in a blank document, through the dialog.
+    Package blank = Package::blank();
+    QTextDocument bdoc;
+    DocxReader::build(blank, &bdoc, &err);
+    HeaderFooters bhf;
+    bhf.load(blank);
+    {
+        HeaderFooterDialog dlg(blank, bhf, false, false);
+        const QList<QTextEdit *> edits = dlg.findChildren<QTextEdit *>();
+        CHECK(edits.size() == 4, "dialog has first-page and all-pages header/footer editors");
+        if (edits.size() == 4) {
+            edits[2]->insertPlainText(QStringLiteral("My Report\t\tPage {PAGE} of {NUMPAGES}"));
+            edits[3]->insertPlainText(QStringLiteral("Confidential"));
+        }
+        CHECK(dlg.apply(), "dialog applies new header/footer");
+    }
+    const QByteArray bout = DocxWriter::build(&bdoc, blank, &err);
+    Package b2;
+    QTextDocument b2doc;
+    CHECK(DocxReader::loadData(bout, &b2doc, &b2, &err), "document with new header reloads");
+    CHECK(b2.hdrFtr.size() == 2 && !b2.titlePg, "new header and footer referenced");
+    const QString docXml = QString::fromUtf8(b2.parts.value(b2.mainPart));
+    const QString ct = QString::fromUtf8(b2.parts.value(QStringLiteral("[Content_Types].xml")));
+    CHECK(docXml.contains(QLatin1String("<w:sectPr><w:footerReference")) || docXml.contains(QLatin1String("<w:sectPr><w:headerReference")),
+          "references are the first children of sectPr");
+    CHECK(ct.contains(QLatin1String("wordprocessingml.header+xml")) && ct.contains(QLatin1String("wordprocessingml.footer+xml")),
+          "content types for new parts");
+    HeaderFooters h2;
+    h2.load(b2);
+    if (QTextDocument *nh = h2.doc(false, QStringLiteral("default"))) {
+        std::unique_ptr<QTextDocument> c(nh->clone());
+        HeaderFooters::fillFields(c.get(), 7, 8);
+        CHECK(c->toPlainText() == QLatin1String("My Report\t\tPage 7 of 8"), "new header round-trips with fields");
+    } else {
+        CHECK(false, "new header loads");
+    }
+    CHECK(docText(h2.doc(true, QStringLiteral("default"))) == QLatin1String("Confidential"), "new footer round-trips");
+
+    // Different first page goes in schema order (before docGrid).
+    Package fp = pkg;
+    fp.setTitlePg(false);
+    CHECK(!fp.sectPrXml.contains(QLatin1String("titlePg")), "titlePg removed");
+    fp.setTitlePg(true);
+    CHECK(fp.sectPrXml.indexOf(QLatin1String("<w:titlePg/>")) < fp.sectPrXml.indexOf(QLatin1String("<w:docGrid")),
+          "titlePg inserted before docGrid");
+}
+
 static void spellMenuTest()
 {
     PageEdit edit;
@@ -1035,6 +1176,8 @@ int main(int argc, char **argv)
             viewTests(f);
             pageTests(f);
         }
+        if (f.endsWith(QLatin1String("headers.docx")))
+            headerFooterTests(f);
         if (f.endsWith(QLatin1String("resume.docx")))
             zoomTests(f);
         if (f.endsWith(QLatin1String("features.docx")))

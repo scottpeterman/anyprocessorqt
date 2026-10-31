@@ -1,5 +1,6 @@
 #pragma once
 
+#include "docx/HeaderFooter.h"
 #include "docx/Package.h"
 
 #include <QMainWindow>
@@ -72,6 +73,8 @@ private:
 
     PageEdit *m_edit = nullptr;
     docx::Package m_pkg;
+    docx::HeaderFooters m_hf;
+    void editHeaderFooter(bool footer, int page);
     QString m_path;
     class FindBar *m_findBar = nullptr;
     class ZoomView *m_zoomView = nullptr;
@@ -93,7 +96,7 @@ private:
     QAction *m_bold, *m_italic, *m_underline, *m_strike, *m_super, *m_sub, *m_color, *m_highlight, *m_clearFmt;
     QAction *m_alignLeft, *m_alignCenter, *m_alignRight, *m_alignJustify;
     QAction *m_bullets, *m_numbers, *m_indentMore, *m_indentLess;
-    QAction *m_insImage, *m_resizeImage, *m_insTable, *m_insBreak, *m_insLink;
+    QAction *m_insImage, *m_resizeImage, *m_insTable, *m_insBreak, *m_insLink, *m_insHeaderFooter;
     QAction *m_rowAbove, *m_rowBelow, *m_colLeft, *m_colRight, *m_delRow, *m_delCol, *m_delTable, *m_merge, *m_split;
     QAction *m_about;
     QAction *m_pageView, *m_draftView, *m_spellAsYouType, *m_nextMisspelling;

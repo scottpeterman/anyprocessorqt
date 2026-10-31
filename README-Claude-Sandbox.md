@@ -20,7 +20,7 @@ pip install --break-system-packages python-docx pillow
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
-./build/anyprocessorqt_tests tests/fixtures/features.docx
+./build/anyprocessorqt_tests tests/fixtures/features.docx tests/fixtures/headers.docx
 ```
 
 Every CLI mode (`--roundtrip`, `--render`, `--pdf`, `--inspect`, `--dump`, `--screenshot`) sets `QT_QPA_PLATFORM=offscreen` itself; there is no display. The `XDG_RUNTIME_DIR not set` warning is harmless.
@@ -42,6 +42,7 @@ Every CLI mode (`--roundtrip`, `--render`, `--pdf`, `--inspect`, `--dump`, `--sc
 - Page view paginates by giving the live document a page height (`setPageSize`), which Qt's layout honours exactly as in print. `QTextEdit` (on every resize/relayout) and `QTextDocument::setTextWidth()` both reset the height to -1, so width changes go through `PageEdit::setDocumentWidth()`, and `PageEdit` re-applies it after `QTextEdit::resizeEvent`. `setPageSize` is layout only: no undo step, no modified flag.
 - With pagination, `documentSize().height()` is the content height, not the last page's bottom: size the embedded editor to `pageCount() * pageHeight`.
 - Paragraph shading is drawn by Qt from the document. Dark paper repaints light neutral shading in `PageEdit::paintDarkCards` (fill, then `QTextBlock::layout()->draw` with selection/find ranges and a steady cursor). Qt fills shading between the paragraph's own margins, not `blockBoundingRect`.
+- Headers/footers are separate `QTextDocument`s (`docx::HeaderFooters`, built by `DocxReader::buildPart` with the part's own rels). PAGE/NUMPAGES results carry the `FieldInstr` char property and are filled per page on a clone. Print and PDF go through `PageEdit::printPages` (not `QTextDocument::print`) so headers and paragraph borders are drawn. `tests/fixtures/headers.docx` comes from `tools/make_headers_fixture.py`.
 - `QTextDocument::availableUndoSteps()` counts internal commands, not user-visible steps: an edit block of several changes reports more than 1 but undoes in one `undo()`. Test single-step undo with `undo()` then `!isUndoAvailable()`.
 - A Qt table cell's format and a block's format live in the document; display-only state (find highlights, spell underlines) goes in `QTextEdit::setExtraSelections` and `QSyntaxHighlighter`.
 - The tests run with `QStandardPaths::setTestModeEnabled(true)`, so the personal dictionary they write lands under `~/.qttest`, not the real app data.

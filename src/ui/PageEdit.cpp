@@ -1,4 +1,5 @@
 #include "ui/PageEdit.h"
+#include "docx/HeaderFooter.h"
 #include "docx/Units.h"
 #include "spell/SpellChecker.h"
 #include "spell/SpellHighlighter.h"
@@ -8,6 +9,8 @@
 #include <QMenu>
 #include <QImage>
 #include <QMimeData>
+#include <QMouseEvent>
+#include <QPagedPaintDevice>
 #include <QPainter>
 #include <QScrollBar>
 #include <QTextBlock>
@@ -151,8 +154,88 @@ void PageEdit::paintEvent(QPaintEvent *e)
         paintDarkCards(p, clip);
     // Page view paginates for real, so page-break markers are only needed in Draft.
     paintDecorations(p, document(), clip, m_mode == ViewMode::Draft, m_paper == theme::Paper::Dark);
-    if (m_mode == ViewMode::Page)
+    if (m_mode == ViewMode::Page) {
         paintPageGaps(p, document(), clip, m_desk);
+        const qreal ph = document()->pageSize().height();
+        if (m_hf && !m_hf->isEmpty() && ph > 0) {
+            const int pages = document()->pageCount();
+            const bool dark = m_paper == theme::Paper::Dark;
+            std::function<QColor(const QColor &)> ink;
+            if (dark)
+                ink = [](const QColor &c) { return spell::SpellHighlighter::onDarkPaper(c); };
+            for (int k = qMax(0, int(clip.top() / ph)); k < pages && k * ph <= clip.bottom(); ++k) {
+                p.save();
+                p.translate(0, k * ph);
+                p.setOpacity(0.6);  // dimmed like Word: body text is what's being edited
+                m_hf->paint(p, k, pages, m_page, theme::inkColor(m_paper), ink);
+                p.restore();
+            }
+        }
+    }
+}
+
+void PageEdit::setHeaderFooters(const docx::HeaderFooters *hf)
+{
+    m_hf = hf;
+    viewport()->update();
+}
+
+void PageEdit::mouseDoubleClickEvent(QMouseEvent *e)
+{
+    const qreal ph = document()->pageSize().height();
+    if (m_mode == ViewMode::Page && ph > 0 && e->button() == Qt::LeftButton) {
+        const QPointF docPt = e->position() + QPointF(horizontalScrollBar()->value(), verticalScrollBar()->value());
+        const int page = int(docPt.y() / ph);
+        const qreal y = docPt.y() - page * ph;
+        if (page < document()->pageCount()) {
+            if (y < twipsToPx(m_page.top)) {
+                emit headerFooterRequested(false, page);
+                return;
+            }
+            if (y > ph - twipsToPx(m_page.bottom)) {
+                emit headerFooterRequested(true, page);
+                return;
+            }
+        }
+    }
+    QTextEdit::mouseDoubleClickEvent(e);
+}
+
+void PageEdit::printPages(QTextDocument *doc, const PageSetup &page, const docx::HeaderFooters *hf,
+                          QPagedPaintDevice *device, int fromPage, int toPage)
+{
+    std::unique_ptr<QTextDocument> copy(doc->clone());
+    const qreal pw = twipsToPx(page.width), ph = twipsToPx(page.height);
+    copy->setPageSize(QSizeF(pw, ph));
+    const int pages = copy->pageCount();
+    QPainter p(device);
+    if (!p.isActive())
+        return;
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setRenderHint(QPainter::TextAntialiasing);
+    p.scale(device->width() / pw, device->height() / ph);
+    const int first = fromPage > 0 ? qMin(fromPage, pages) - 1 : 0;
+    const int last = toPage > 0 ? qMin(toPage, pages) - 1 : pages - 1;
+    for (int k = first; k <= last; ++k) {
+        if (k > first)
+            device->newPage();
+        const QRectF view(0, k * ph, pw, ph);
+        p.save();
+        p.translate(0, -k * ph);
+        p.setClipRect(view);
+        QAbstractTextDocumentLayout::PaintContext ctx;
+        ctx.clip = view;
+        ctx.palette.setColor(QPalette::Text, Qt::black);
+        copy->documentLayout()->draw(&p, ctx);
+        paintDecorations(p, copy.get(), view, false);
+        p.restore();
+        if (hf && !hf->isEmpty()) {
+            p.save();
+            p.setClipRect(QRectF(0, 0, pw, ph));
+            hf->paint(p, k, pages, page, Qt::black);
+            p.restore();
+        }
+    }
 }
 
 void PageEdit::paintDarkCards(QPainter &p, const QRectF &clip)

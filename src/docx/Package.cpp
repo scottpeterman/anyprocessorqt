@@ -5,6 +5,7 @@
 
 #include <QDir>
 #include <QRegularExpression>
+#include <QSet>
 
 namespace docx {
 
@@ -68,6 +69,100 @@ static QList<Relationship> parseRels(const QByteArray &xml)
     return out;
 }
 
+QList<Relationship> Package::relsOf(const QString &part) const
+{
+    const int slash = part.lastIndexOf(QLatin1Char('/'));
+    const QString path = part.left(slash + 1) + QStringLiteral("_rels/") + part.mid(slash + 1) + QStringLiteral(".rels");
+    return parseRels(parts.value(path));
+}
+
+const HdrFtrRef *Package::hdrFtrRef(bool footer, const QString &type) const
+{
+    for (const HdrFtrRef &r : hdrFtr)
+        if (r.footer == footer && r.type == type)
+            return &r;
+    return nullptr;
+}
+
+static const char *kRelHeader = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header";
+static const char *kRelFooter = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer";
+
+void Package::setHdrFtrXml(bool footer, const QString &type, const QByteArray &xml)
+{
+    for (const HdrFtrRef &r : hdrFtr) {
+        if (r.footer == footer && r.type == type) {
+            parts.insert(r.part, xml);
+            return;
+        }
+    }
+    const QString kind = footer ? QStringLiteral("footer") : QStringLiteral("header");
+    const QString dir = mainDir();
+    QString part;
+    for (int n = 1;; ++n) {
+        part = (dir.isEmpty() ? QString() : dir + QLatin1Char('/')) + kind + QString::number(n) + QStringLiteral(".xml");
+        if (!parts.contains(part))
+            break;
+    }
+    parts.insert(part, xml);
+    partOrder.append(part);
+
+    QSet<QString> ids;
+    for (const Relationship &r : docRels)
+        ids.insert(r.id);
+    QString id;
+    for (int n = 1;; ++n) {
+        id = QStringLiteral("rIdHf%1").arg(n);
+        if (!ids.contains(id))
+            break;
+    }
+    const QString target = part.mid(dir.isEmpty() ? 0 : dir.size() + 1);
+    docRels.append(Relationship{id, QString::fromLatin1(footer ? kRelFooter : kRelHeader), target, QString()});
+
+    const QString ctPart = QStringLiteral("[Content_Types].xml");
+    QString ct = QString::fromUtf8(parts.value(ctPart));
+    const int close = ct.lastIndexOf(QLatin1String("</Types>"));
+    if (close >= 0) {
+        ct.insert(close, QStringLiteral("<Override PartName=\"/%1\" ContentType=\"application/vnd.openxmlformats-"
+                                        "officedocument.wordprocessingml.%2+xml\"/>")
+                             .arg(part, kind));
+        parts.insert(ctPart, ct.toUtf8());
+    }
+
+    // References come first in w:sectPr.
+    if (sectPrXml.isEmpty())
+        sectPrXml = QStringLiteral("<w:sectPr></w:sectPr>");
+    if (sectPrXml.endsWith(QLatin1String("/>"))) {
+        sectPrXml.chop(2);
+        sectPrXml += QStringLiteral("></w:sectPr>");
+    }
+    const QString ref = QStringLiteral("<w:%1Reference w:type=\"%2\" r:id=\"%3\"/>").arg(kind, type, id);
+    sectPrXml.insert(sectPrXml.indexOf(QLatin1Char('>')) + 1, ref);
+    hdrFtr.append(HdrFtrRef{footer, type, id, part});
+}
+
+void Package::setTitlePg(bool on)
+{
+    if (titlePg == on)
+        return;
+    titlePg = on;
+    static const QRegularExpression existing(QStringLiteral("<w:titlePg(\\s[^>]*)?/>"));
+    sectPrXml.remove(existing);
+    if (!on)
+        return;
+    if (sectPrXml.isEmpty())
+        sectPrXml = QStringLiteral("<w:sectPr></w:sectPr>");
+    if (sectPrXml.endsWith(QLatin1String("/>"))) {
+        sectPrXml.chop(2);
+        sectPrXml += QStringLiteral("></w:sectPr>");
+    }
+    // Schema order: titlePg precedes these.
+    static const QRegularExpression after(
+        QStringLiteral("<w:(textDirection|bidi|rtlGutter|docGrid|printerSettings|sectPrChange)[\\s/>]"));
+    const auto m = after.match(sectPrXml);
+    const qsizetype at = m.hasMatch() ? m.capturedStart() : sectPrXml.lastIndexOf(QLatin1String("</w:sectPr>"));
+    sectPrXml.insert(at, QStringLiteral("<w:titlePg/>"));
+}
+
 static void parsePage(const XElem *sectPr, PageSetup &page)
 {
     if (!sectPr)
@@ -81,7 +176,17 @@ static void parsePage(const XElem *sectPr, PageSetup &page)
         page.bottom = m->intAttr(u"bottom", page.bottom);
         page.left = m->hasAttr(u"left") ? m->intAttr(u"left") : m->intAttr(u"start", page.left);
         page.right = m->hasAttr(u"right") ? m->intAttr(u"right") : m->intAttr(u"end", page.right);
+        page.header = m->intAttr(u"header", page.header);
+        page.footer = m->intAttr(u"footer", page.footer);
     }
+}
+
+static bool onOffVal(const XElem *e)
+{
+    if (!e)
+        return false;
+    const QString v = e->attr(u"val");
+    return v.isEmpty() || v == QLatin1String("1") || v == QLatin1String("true") || v == QLatin1String("on");
 }
 
 bool Package::loadFrom(const QByteArray &zipData, QString *error)
@@ -163,14 +268,19 @@ bool Package::loadFrom(const QByteArray &zipData, QString *error)
     }
 
     defaultTabStop = 720;
+    evenAndOdd = false;
     const QString settingsPart = partForRelType(QStringLiteral("/settings"));
     if (!settingsPart.isEmpty()) {
-        if (auto settings = parseXml(parts.value(settingsPart)))
+        if (auto settings = parseXml(parts.value(settingsPart))) {
             if (const XElem *t = settings->child(u"defaultTabStop"))
                 defaultTabStop = qMax(1, t->intAttr(u"val", 720));
+            evenAndOdd = onOffVal(settings->child(u"evenAndOddHeaders"));
+        }
     }
 
     page = PageSetup();
+    hdrFtr.clear();
+    titlePg = false;
     if (!sectPrXml.isEmpty()) {
         QString wrapped = QStringLiteral("<x xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" "
                                          "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">")
@@ -186,8 +296,24 @@ bool Package::loadFrom(const QByteArray &zipData, QString *error)
         }
         wrapped.insert(2, decls);
         auto frag = parseXml(wrapped.toUtf8());
-        if (frag)
-            parsePage(frag->child(u"sectPr"), page);
+        const XElem *sp = frag ? frag->child(u"sectPr") : nullptr;
+        parsePage(sp, page);
+        if (sp) {
+            titlePg = onOffVal(sp->child(u"titlePg"));
+            for (const auto &k : sp->kids) {
+                const bool isHeader = k->name == QLatin1String("headerReference");
+                if (!isHeader && k->name != QLatin1String("footerReference"))
+                    continue;
+                HdrFtrRef ref;
+                ref.footer = !isHeader;
+                ref.type = k->attr(u"type").isEmpty() ? QStringLiteral("default") : k->attr(u"type");
+                ref.relId = k->attr(u"id");
+                if (const Relationship *r = rel(ref.relId))
+                    ref.part = resolveTarget(r->target);
+                if (!ref.part.isEmpty() && parts.contains(ref.part))
+                    hdrFtr.append(ref);
+            }
+        }
     }
     return true;
 }

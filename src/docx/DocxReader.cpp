@@ -65,7 +65,30 @@ struct Ctx {
     bool pendingPageBreak = false;
     bool splitPending = false;    // page break seen mid-paragraph; split before next text
     QString href;
-    QList<bool> fieldInResult;    // complex-field stack: false = instructions, true = result
+    QList<bool> fieldInResult;    // field stack: false = instructions, true = result
+    QStringList fieldInstr;       // instruction text, parallel to fieldInResult
+    const QList<Relationship> *partRels = nullptr;  // header/footer: the part's own relationships
+
+    const Relationship *relFor(const QString &id) const
+    {
+        if (!partRels)
+            return pkg.rel(id);
+        for (const Relationship &r : *partRels)
+            if (r.id == id)
+                return &r;
+        return nullptr;
+    }
+
+    // PAGE / NUMPAGES when inside such a field's result, else empty.
+    QString currentField() const
+    {
+        if (fieldInResult.isEmpty() || !fieldInResult.last())
+            return QString();
+        const QString word = fieldInstr.last().trimmed().section(QLatin1Char(' '), 0, 0).toUpper();
+        if (word == QLatin1String("PAGE") || word == QLatin1String("NUMPAGES") || word == QLatin1String("SECTIONPAGES"))
+            return word == QLatin1String("SECTIONPAGES") ? QStringLiteral("NUMPAGES") : word;
+        return QString();
+    }
     QHash<QString, QTextList *> lists;  // "numId:ilvl"
 
     // Previous paragraph in the same container, for w:contextualSpacing.
@@ -270,14 +293,20 @@ struct Ctx {
                 const QString saved = href;
                 const QString rid = k->attr(u"id");
                 const QString anchor = k->attr(u"anchor");
-                if (const Relationship *r = pkg.rel(rid))
+                if (const Relationship *r = relFor(rid))
                     href = r->target;
                 else if (!anchor.isEmpty())
                     href = QLatin1Char('#') + anchor;
                 runs(k.get(), cur, paraRun);
                 href = saved;
+            } else if (n == QLatin1String("fldSimple")) {
+                fieldInResult.append(true);
+                fieldInstr.append(k->attr(u"instr"));
+                runs(k.get(), cur, paraRun);
+                fieldInResult.removeLast();
+                fieldInstr.removeLast();
             } else if (n == QLatin1String("ins") || n == QLatin1String("smartTag") || n == QLatin1String("customXml")
-                       || n == QLatin1String("fldSimple") || n == QLatin1String("dir") || n == QLatin1String("bdo")
+                       || n == QLatin1String("dir") || n == QLatin1String("bdo")
                        || n == QLatin1String("moveTo")) {
                 runs(k.get(), cur, paraRun);
             } else if (n == QLatin1String("sdt")) {
@@ -313,19 +342,30 @@ struct Ctx {
             const QString &n = k->name;
             if (n == QLatin1String("fldChar")) {
                 const QString t = k->attr(u"fldCharType");
-                if (t == QLatin1String("begin"))
+                if (t == QLatin1String("begin")) {
                     fieldInResult.append(false);
-                else if (t == QLatin1String("separate") && !fieldInResult.isEmpty())
+                    fieldInstr.append(QString());
+                } else if (t == QLatin1String("separate") && !fieldInResult.isEmpty()) {
                     fieldInResult.last() = true;
-                else if (t == QLatin1String("end") && !fieldInResult.isEmpty())
+                } else if (t == QLatin1String("end") && !fieldInResult.isEmpty()) {
                     fieldInResult.removeLast();
+                    fieldInstr.removeLast();
+                }
                 continue;
             }
-            if (inFieldInstr())
+            if (inFieldInstr()) {
+                if (n == QLatin1String("instrText"))
+                    fieldInstr.last() += k->text;
                 continue;
+            }
+            const QString field = currentField();
+            if (field.isEmpty())
+                cf.clearProperty(FieldInstr);
+            else
+                cf.setProperty(FieldInstr, field);
             if (n == QLatin1String("t")) {
                 insertText(cur, k->text, cf);
-            } else if (n == QLatin1String("tab")) {
+            } else if (n == QLatin1String("tab") || n == QLatin1String("ptab")) {
                 insertText(cur, QStringLiteral("\t"), cf);
             } else if (n == QLatin1String("br")) {
                 const QString type = k->attr(u"type");
@@ -369,7 +409,7 @@ struct Ctx {
         const XElem *blip = findDesc(holder, u"blip");
         if (!blip)
             return;  // shapes / charts: not supported yet
-        const Relationship *r = pkg.rel(blip->attr(u"embed"));
+        const Relationship *r = relFor(blip->attr(u"embed"));
         if (!r)
             return;
         const QString part = pkg.resolveTarget(r->target);
@@ -605,6 +645,32 @@ bool DocxReader::build(const Package &pkg, QTextDocument *doc, QString *error)
     }
     cur.endEditBlock();
 
+    doc->setUndoRedoEnabled(undo);
+    doc->setModified(false);
+    return true;
+}
+
+bool DocxReader::buildPart(const Package &pkg, const QString &part, QTextDocument *doc, QString *error)
+{
+    auto root = parseXml(pkg.parts.value(part), error);
+    if (!root)
+        return false;
+    const bool undo = doc->isUndoRedoEnabled();
+    doc->setUndoRedoEnabled(false);
+    doc->clear();
+    applyPageSetup(pkg, doc);
+    QTextFrameFormat ff = doc->rootFrame()->frameFormat();
+    ff.setMargin(0);
+    doc->rootFrame()->setFrameFormat(ff);
+    doc->setTextWidth(twipsToPx(pkg.page.width - pkg.page.left - pkg.page.right));
+
+    const QList<Relationship> rels = pkg.relsOf(part);
+    Ctx ctx(pkg, doc);
+    ctx.partRels = &rels;
+    QTextCursor cur(doc);
+    cur.beginEditBlock();
+    ctx.body(root.get(), cur);
+    cur.endEditBlock();
     doc->setUndoRedoEnabled(undo);
     doc->setModified(false);
     return true;
