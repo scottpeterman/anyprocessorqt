@@ -1173,6 +1173,7 @@ int main(int argc, char **argv)
     QStandardPaths::setTestModeEnabled(true);  // personal dictionary etc. go to a test location
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("anyprocessorqt-tests"));
+    QApplication::setOrganizationName(QStringLiteral("anyprocessorqt-tests"));  // QSettings needs one on Windows
 
     QString keep;
     QStringList files;
