@@ -26,26 +26,45 @@ QStringList pushed(QStringList list, const QString &path)
     return list;
 }
 
+// Stored as one newline-joined string: QSettings' native backends differ in how
+// they round-trip string lists (the Windows registry in particular).
+static void save(const QStringList &list)
+{
+    QSettings s;
+    if (list.isEmpty())
+        s.remove(kKey);
+    else
+        s.setValue(kKey, list.join(QLatin1Char('\n')));
+    s.sync();
+}
+
 QStringList load()
 {
-    return QSettings().value(kKey).toStringList();
+    const QVariant v = QSettings().value(kKey);
+    QStringList out;
+    const QStringList raw = v.typeId() == QMetaType::QStringList ? v.toStringList()
+                                                                 : v.toString().split(QLatin1Char('\n'));
+    for (const QString &p : raw)
+        if (!p.trimmed().isEmpty())
+            out.append(p);
+    return out;
 }
 
 void add(const QString &path)
 {
-    QSettings().setValue(kKey, pushed(load(), path));
+    save(pushed(load(), path));
 }
 
 void remove(const QString &path)
 {
     QStringList l = load();
     l.removeAll(normalized(path));
-    QSettings().setValue(kKey, l);
+    save(l);
 }
 
 void clear()
 {
-    QSettings().remove(kKey);
+    save({});
 }
 
 } // namespace recent

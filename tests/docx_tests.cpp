@@ -14,6 +14,8 @@
 #include "ui/PageEdit.h"
 #include "ui/Theme.h"
 #include "ui/RecentFiles.h"
+#include <QDir>
+#include <QFileInfo>
 #include "ui/HeaderFooterDialog.h"
 #include "docx/HeaderFooter.h"
 #include <QPdfWriter>
@@ -883,11 +885,16 @@ static void recentTests()
           "reopening moves a file to the top without duplicating it");
     l = recent::pushed(l, QStringLiteral("/docs/sub/../f5.docx"));
     CHECK(l.count(QStringLiteral("/docs/f5.docx")) == 1, "paths normalised");
+    // Real absolute paths: "/tmp/x" is drive-relative on Windows.
+    const QString a = QDir(QDir::tempPath()).filePath(QStringLiteral("apq-a.docx"));
+    const QString b = QDir(QDir::tempPath()).filePath(QStringLiteral("apq-b.docx"));
     recent::clear();
-    recent::add(QStringLiteral("/tmp/a.docx"));
-    recent::add(QStringLiteral("/tmp/b.docx"));
-    recent::remove(QStringLiteral("/tmp/a.docx"));
-    CHECK(recent::load() == QStringList{QStringLiteral("/tmp/b.docx")}, "recent list persists add/remove");
+    recent::add(a);
+    recent::add(b);
+    recent::remove(a);
+    const QStringList got = recent::load();
+    CHECK(got.size() == 1 && QFileInfo(got.value(0)) == QFileInfo(b),
+          qPrintable(QStringLiteral("recent list persists add/remove (%1)").arg(got.join(QLatin1Char('|')))));
     recent::clear();
     CHECK(recent::load().isEmpty(), "clear list");
 }
