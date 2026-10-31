@@ -415,6 +415,10 @@ bool PageEdit::selectNextMisspelling()
 void PageEdit::contextMenuEvent(QContextMenuEvent *e)
 {
     std::unique_ptr<QMenu> menu(createStandardContextMenu(e->pos()));
+    if (textCursor().currentTable()) {
+        menu->addSeparator();
+        menu->addAction(tr("Table Properties…"), this, &PageEdit::tablePropertiesRequested);
+    }
     spell::SpellChecker &sc = spell::SpellChecker::instance();
     const QTextCursor at = cursorForPosition(e->pos());
     const QTextBlock block = at.block();

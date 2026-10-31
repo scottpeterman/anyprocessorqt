@@ -13,7 +13,7 @@ v0.1.0 — early. It opens, edits and saves real Word documents. Round-trip test
 - **Text:** font family and size, bold, italic, underline, strikethrough, superscript/subscript, color, highlight, clear formatting
 - **Paragraphs:** paragraph styles from the document (Normal, Title, Heading 1–n, List Paragraph, custom), alignment, indent, line spacing, spacing before/after, tab stops, paragraph borders (e.g. left-rule callouts), shading, page breaks
 - **Lists:** bulleted and numbered, nested levels, Word style-driven lists (List Bullet / List Number), contextual spacing
-- **Tables:** insert, add/remove rows and columns, merge/split cells; horizontal and vertical merges, cell shading and borders survive round-trips
+- **Tables:** insert, add/remove rows and columns, merge/split cells; horizontal and vertical merges, cell shading and borders survive round-trips. Table → Table Properties… (also on the right-click menu inside a table): alignment, left/right cell padding, column widths in inches (Distribute Evenly, Fit to Page Width), borders (none, all, outside, inside, horizontal lines; width and color), and vertical alignment and shading for the selected cells, as one undo step
 - **Code:** Code Block (Ctrl+Alt+C) and Inline Code (Ctrl+`). They're real named styles ("Code", "Inline Code") added to the document when first used: monospace, shaded, consecutive code lines packed together. Pasting into a code block keeps plain text and indentation, and spell check skips code
 - **Find & Replace:** Ctrl+F / Ctrl+H open a bar under the editor with Match case, Whole words, Previous/Next (Shift+F3 / F3), Replace and Replace All; matches are counted and highlighted. Replacements keep the replaced text's formatting, and Replace All is one undo step
 - **Images:** insert or paste PNG/JPEG/GIF/BMP/WebP, resize by % of text width; original image bytes are kept untouched on save
@@ -146,7 +146,6 @@ Builds a document the way the editor does (styles, lists, nested levels, tables 
 
 - Regular-expression search
 - More bundled spelling dictionaries
-- Table properties dialog (borders, widths, alignment)
 
 ## Releasing
 

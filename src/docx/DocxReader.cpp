@@ -1,5 +1,6 @@
 #include "docx/DocxReader.h"
 #include "docx/Convert.h"
+#include "docx/TableFormat.h"
 #include "docx/Units.h"
 #include "docx/Xml.h"
 
@@ -488,6 +489,8 @@ struct Ctx {
         const XElem *tblPr = tbl->child(u"tblPr");
         QString tblStyle;
         bool borders = false;
+        QString borderSpec;
+        int cellMar = -1;
         Qt::Alignment align = Qt::AlignLeft;
         if (tblPr) {
             if (const XElem *ts = tblPr->child(u"tblStyle"))
@@ -498,8 +501,28 @@ struct Ctx {
                     if (!v.isEmpty() && v != QLatin1String("nil") && v != QLatin1String("none"))
                         borders = true;
                 }
+                TblBorders tb2;
+                for (int i = 0; i < TblBorders::Count; ++i) {
+                    const auto side = TblBorders::Side(i);
+                    const XElem *e = tb->child(QString::fromLatin1(TblBorders::xmlName(side)));
+                    if (!e && side == TblBorders::Left)
+                        e = tb->child(u"start");
+                    if (!e && side == TblBorders::Right)
+                        e = tb->child(u"end");
+                    if (!e)
+                        continue;
+                    const QString col = e->attr(u"color");
+                    tb2.side[i] = BorderSide{e->attr(u"val"), e->intAttr(u"sz", 4),
+                                             col.isEmpty() ? QStringLiteral("auto") : col.toUpper() == QLatin1String("AUTO") ? QStringLiteral("auto") : col.toUpper()};
+                }
+                borderSpec = tb2.spec();
             } else if (tblStyle.contains(QLatin1String("Grid"), Qt::CaseInsensitive)) {
                 borders = true;
+            }
+            if (const XElem *cm = tblPr->child(u"tblCellMar")) {
+                const XElem *l = cm->child(u"left") ? cm->child(u"left") : cm->child(u"start");
+                if (l && (l->attr(u"type").isEmpty() || l->attr(u"type") == QLatin1String("dxa")))
+                    cellMar = l->intAttr(u"w", kDefaultCellMarLR);
             }
             if (const XElem *jc = tblPr->child(u"jc")) {
                 const QString v = jc->attr(u"val");
@@ -511,10 +534,12 @@ struct Ctx {
         }
 
         QTextTableFormat tf;
-        tf.setBorder(borders ? 1 : 0);
-        tf.setBorderStyle(QTextFrameFormat::BorderStyle_Solid);
-        tf.setBorderBrush(QBrush(QColor(0x80, 0x80, 0x80)));
+        tf.setBorder(0);  // borders are per cell (applyTableCellFormats)
         tf.setBorderCollapse(true);
+        if (!borderSpec.isEmpty())
+            tf.setProperty(TableBorderSpec, borderSpec);
+        if (cellMar >= 0)
+            tf.setProperty(TableCellMarLR, cellMar);
         tf.setCellSpacing(0);
         tf.setCellPadding(4);
         tf.setAlignment(align);
@@ -569,17 +594,32 @@ struct Ctx {
             if (cp.vmerge == 2 || cp.row >= nRows || cp.col >= nCols)
                 continue;
             const XElem *tcPr = cp.tc->child(u"tcPr");
-            const XElem *shd = tcPr ? tcPr->child(u"shd") : nullptr;
-            if (!shd)
-                continue;
-            const QString fill = shd->attr(u"fill").toUpper();
-            if (fill.isEmpty() || fill == QLatin1String("AUTO"))
+            if (!tcPr)
                 continue;
             QTextTableCell cell = table->cellAt(cp.row, cp.col);
             QTextTableCellFormat cfmt = cell.format().toTableCellFormat();
-            cfmt.setBackground(QColor(QLatin1Char('#') + fill));
-            cell.setFormat(cfmt);
+            bool changed = false;
+            if (const XElem *shd = tcPr->child(u"shd")) {
+                const QString fill = shd->attr(u"fill").toUpper();
+                if (!fill.isEmpty() && fill != QLatin1String("AUTO")) {
+                    cfmt.setBackground(QColor(QLatin1Char('#') + fill));
+                    changed = true;
+                }
+            }
+            if (const XElem *va = tcPr->child(u"vAlign")) {
+                const QString v = va->attr(u"val");
+                if (v == QLatin1String("center")) {
+                    cfmt.setVerticalAlignment(QTextCharFormat::AlignMiddle);
+                    changed = true;
+                } else if (v == QLatin1String("bottom")) {
+                    cfmt.setVerticalAlignment(QTextCharFormat::AlignBottom);
+                    changed = true;
+                }
+            }
+            if (changed)
+                cell.setFormat(cfmt);
         }
+        applyTableCellFormats(table);
 
         cur = table->lastCursorPosition();
         cur.movePosition(QTextCursor::NextBlock);

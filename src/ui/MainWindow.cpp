@@ -8,6 +8,8 @@
 #include "ui/InsertTableDialog.h"
 #include "ui/HeaderFooterDialog.h"
 #include "ui/PageEdit.h"
+#include "ui/TablePropertiesDialog.h"
+#include "docx/TableFormat.h"
 #include "ui/RecentFiles.h"
 #include "ui/Theme.h"
 #include "ui/ZoomView.h"
@@ -74,6 +76,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     layout->addWidget(m_zoomView, 1);
     m_edit->setHeaderFooters(&m_hf);
     connect(m_edit, &PageEdit::headerFooterRequested, this, &MainWindow::editHeaderFooter);
+    connect(m_edit, &PageEdit::tablePropertiesRequested, this, &MainWindow::tableProperties);
     m_findBar = new FindBar(m_edit, central);
     layout->addWidget(m_findBar);
     setCentralWidget(central);
@@ -331,33 +334,61 @@ void MainWindow::buildActions()
     m_insLink = mk(tr("&Hyperlink…"), QKeySequence(Qt::CTRL | Qt::Key_K), [this] { insertHyperlink(); }, "insert-link");
 
     auto table = [this] { return m_edit->textCursor().currentTable(); };
-    m_rowAbove = mk(tr("Insert Row &Above"), QKeySequence(), [this, table] {
-        if (QTextTable *t = table()) t->insertRows(t->cellAt(m_edit->textCursor()).row(), 1);
-    });
-    m_rowBelow = mk(tr("Insert Row &Below"), QKeySequence(), [this, table] {
-        if (QTextTable *t = table()) { const auto c = t->cellAt(m_edit->textCursor()); t->insertRows(c.row() + c.rowSpan(), 1); }
-    });
-    m_colLeft = mk(tr("Insert Column &Left"), QKeySequence(), [this, table] {
-        if (QTextTable *t = table()) t->insertColumns(t->cellAt(m_edit->textCursor()).column(), 1);
-    });
-    m_colRight = mk(tr("Insert Column &Right"), QKeySequence(), [this, table] {
-        if (QTextTable *t = table()) { const auto c = t->cellAt(m_edit->textCursor()); t->insertColumns(c.column() + c.columnSpan(), 1); }
-    });
-    m_delRow = mk(tr("Delete R&ow"), QKeySequence(), [this, table] {
-        if (QTextTable *t = table()) t->removeRows(t->cellAt(m_edit->textCursor()).row(), 1);
-    });
-    m_delCol = mk(tr("Delete Colu&mn"), QKeySequence(), [this, table] {
-        if (QTextTable *t = table()) t->removeColumns(t->cellAt(m_edit->textCursor()).column(), 1);
-    });
+    // Structural edits plus re-deriving cell borders, as one undo step.
+    auto tableOp = [this](auto op) {
+        return [this, op] {
+            QTextTable *t = m_edit->textCursor().currentTable();
+            if (!t)
+                return;
+            QTextCursor block(m_edit->document());
+            block.beginEditBlock();
+            const bool removed = op(t);
+            if (!removed)
+                applyTableCellFormats(t);
+            block.endEditBlock();
+        };
+    };
+    m_rowAbove = mk(tr("Insert Row &Above"), QKeySequence(), tableOp([this](QTextTable *t) {
+        t->insertRows(t->cellAt(m_edit->textCursor()).row(), 1);
+        return false;
+    }));
+    m_rowBelow = mk(tr("Insert Row &Below"), QKeySequence(), tableOp([this](QTextTable *t) {
+        const auto c = t->cellAt(m_edit->textCursor());
+        t->insertRows(c.row() + c.rowSpan(), 1);
+        return false;
+    }));
+    m_colLeft = mk(tr("Insert Column &Left"), QKeySequence(), tableOp([this](QTextTable *t) {
+        t->insertColumns(t->cellAt(m_edit->textCursor()).column(), 1);
+        return false;
+    }));
+    m_colRight = mk(tr("Insert Column &Right"), QKeySequence(), tableOp([this](QTextTable *t) {
+        const auto c = t->cellAt(m_edit->textCursor());
+        t->insertColumns(c.column() + c.columnSpan(), 1);
+        return false;
+    }));
+    m_delRow = mk(tr("Delete R&ow"), QKeySequence(), tableOp([this](QTextTable *t) {
+        const bool last = t->rows() == 1;
+        t->removeRows(t->cellAt(m_edit->textCursor()).row(), 1);
+        return last;
+    }));
+    m_delCol = mk(tr("Delete Colu&mn"), QKeySequence(), tableOp([this](QTextTable *t) {
+        const bool last = t->columns() == 1;
+        t->removeColumns(t->cellAt(m_edit->textCursor()).column(), 1);
+        return last;
+    }));
     m_delTable = mk(tr("Delete &Table"), QKeySequence(), [this, table] {
         if (QTextTable *t = table()) t->removeRows(0, t->rows());
     });
-    m_merge = mk(tr("&Merge Cells"), QKeySequence(), [this, table] {
-        if (QTextTable *t = table()) t->mergeCells(m_edit->textCursor());
-    });
-    m_split = mk(tr("&Split Cell"), QKeySequence(), [this, table] {
-        if (QTextTable *t = table()) { const auto c = t->cellAt(m_edit->textCursor()); t->splitCell(c.row(), c.column(), 1, 1); }
-    });
+    m_merge = mk(tr("&Merge Cells"), QKeySequence(), tableOp([this](QTextTable *t) {
+        t->mergeCells(m_edit->textCursor());
+        return false;
+    }));
+    m_split = mk(tr("&Split Cell"), QKeySequence(), tableOp([this](QTextTable *t) {
+        const auto c = t->cellAt(m_edit->textCursor());
+        t->splitCell(c.row(), c.column(), 1, 1);
+        return false;
+    }));
+    m_tableProps = mk(tr("Table &Properties…"), QKeySequence(), [this] { tableProperties(); });
 
     m_pageView = mk(tr("&Page View"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_P), [this] { setDraftView(false); });
     m_draftView = mk(tr("&Draft View (full width)"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_N),
@@ -474,6 +505,8 @@ void MainWindow::buildMenus()
     table->addActions({m_delRow, m_delCol, m_delTable});
     table->addSeparator();
     table->addActions({m_merge, m_split});
+    table->addSeparator();
+    table->addAction(m_tableProps);
 
     QMenu *tools = menuBar()->addMenu(tr("T&ools"));
     tools->addActions({m_spellAsYouType, m_nextMisspelling});
@@ -1088,21 +1121,31 @@ void MainWindow::insertTable()
     InsertTableDialog dlg(this);
     if (dlg.exec() != QDialog::Accepted)
         return;
-    const int cols = dlg.columns();
-    QTextTableFormat tf;
-    tf.setBorder(1);
-    tf.setBorderStyle(QTextFrameFormat::BorderStyle_Solid);
-    tf.setBorderBrush(QBrush(QColor(0x80, 0x80, 0x80)));
-    tf.setBorderCollapse(true);
-    tf.setCellSpacing(0);
-    tf.setCellPadding(4);
-    tf.setProperty(TableBorders, true);
-    QList<QTextLength> widths;
-    const double w = m_pkg.page.contentWidthPx() / cols;
-    for (int i = 0; i < cols; ++i)
-        widths.append(QTextLength(QTextLength::FixedLength, w));
-    tf.setColumnWidthConstraints(widths);
-    m_edit->textCursor().insertTable(dlg.rows(), cols, tf);
+    QTextCursor c = m_edit->textCursor();
+    c.beginEditBlock();
+    QTextTable *t = c.insertTable(dlg.rows(), dlg.columns(), newTableFormat(dlg.columns(), m_pkg.page.contentWidthPx()));
+    applyTableCellFormats(t);
+    c.endEditBlock();
+}
+
+void MainWindow::tableProperties()
+{
+    const QTextCursor cur = m_edit->textCursor();
+    QTextTable *t = cur.currentTable();
+    if (!t)
+        return;
+    int r0 = -1, nr = 0, c0 = -1, nc = 0;
+    cur.selectedTableCells(&r0, &nr, &c0, &nc);
+    if (r0 < 0) {
+        const QTextTableCell cell = t->cellAt(cur);
+        r0 = cell.row();
+        c0 = cell.column();
+        nr = cell.rowSpan();
+        nc = cell.columnSpan();
+    }
+    TablePropertiesDialog dlg(t, m_pkg.page.contentWidthPx(), r0, nr, c0, nc, this);
+    if (dlg.exec() == QDialog::Accepted)
+        dlg.apply();
 }
 
 void MainWindow::insertPageBreak()

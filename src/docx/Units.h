@@ -39,6 +39,8 @@ enum Prop : int {
     LineOrig,                                // block: "line|rule" docx spacing when display compensated
     LineShown,                               // block: line height as displayed ("type|value")
     FieldInstr,                              // char: field result of PAGE / NUMPAGES ("PAGE", "NUMPAGES")
+    TableBorderSpec,                         // table: explicit w:tblBorders, see docx::TableBorders
+    TableCellMarLR,                          // table: w:tblCellMar left/right, twips
 };
 
 } // namespace docx

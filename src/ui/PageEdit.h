@@ -76,7 +76,8 @@ protected:
 
 signals:
     void geometryHintsChanged();
-    void headerFooterRequested(bool footer, int page);  // double-click in a page's top/bottom margin  // view mode or page setup changed: the host should re-lay out
+    void headerFooterRequested(bool footer, int page);
+    void tablePropertiesRequested();  // double-click in a page's top/bottom margin  // view mode or page setup changed: the host should re-lay out
 
 private:
     void updateMargins();

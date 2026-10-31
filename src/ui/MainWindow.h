@@ -55,6 +55,7 @@ private:
     void insertImage();
     void resizeImage();
     void insertTable();
+    void tableProperties();
     void insertPageBreak();
     void insertHyperlink();
     void toggleCodeBlock();
@@ -99,7 +100,7 @@ private:
     QAction *m_alignLeft, *m_alignCenter, *m_alignRight, *m_alignJustify;
     QAction *m_bullets, *m_numbers, *m_indentMore, *m_indentLess;
     QAction *m_insImage, *m_resizeImage, *m_insTable, *m_insBreak, *m_insLink, *m_insHeaderFooter;
-    QAction *m_rowAbove, *m_rowBelow, *m_colLeft, *m_colRight, *m_delRow, *m_delCol, *m_delTable, *m_merge, *m_split;
+    QAction *m_rowAbove, *m_rowBelow, *m_colLeft, *m_colRight, *m_delRow, *m_delCol, *m_delTable, *m_merge, *m_split, *m_tableProps;
     QAction *m_about;
     QAction *m_pageView, *m_draftView, *m_spellAsYouType, *m_nextMisspelling;
     QAction *m_zoomIn, *m_zoomOut, *m_zoomFit, *m_zoom100;
