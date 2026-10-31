@@ -2,6 +2,7 @@
 #include "docx/Units.h"
 
 #include <QAbstractTextDocumentLayout>
+#include <QFontMetricsF>
 #include <QHash>
 #include <QRawFont>
 #include <QTextBlock>
@@ -54,16 +55,26 @@ LineMetrics lineMetrics(const QFont &font)
     if (it != cache.constEnd())
         return it.value();
     LineMetrics m;
-    const QRawFont raw = QRawFont::fromFont(font);
+    const double px = font.pointSizeF() > 0 ? font.pointSizeF() * 96.0 / 72.0 : font.pixelSize();
+    QRawFont raw = QRawFont::fromFont(font);
     const QByteArray os2 = raw.fontTable("OS/2");
     const QByteArray head = raw.fontTable("head");
     if (os2.size() >= 78 && head.size() >= 20) {
         const int upm = qFromBigEndian<quint16>(head.constData() + 18);
         const int winAscent = qFromBigEndian<quint16>(os2.constData() + 74);
         const int winDescent = qFromBigEndian<quint16>(os2.constData() + 76);
-        const double px = font.pointSizeF() > 0 ? font.pointSizeF() * 96.0 / 72.0 : font.pixelSize();
         if (upm > 0)
             m.word = (winAscent + winDescent) * px / upm;
+    }
+    // Some font engines don't hand out sfnt tables (seen on Windows). Fall back to
+    // the raw font's unhinted ascent+descent, then to plain font metrics.
+    if (m.word <= 0 && raw.isValid()) {
+        raw.setPixelSize(px);
+        m.word = raw.ascent() + raw.descent();
+    }
+    if (m.word <= 0) {
+        const QFontMetricsF fm(font);
+        m.word = fm.ascent() + fm.descent();
     }
     // Measure Qt's real pitch: two lines in a throwaway document.
     QTextDocument d;
