@@ -13,6 +13,9 @@
 #include "spell/SpellHighlighter.h"
 #include "ui/PageEdit.h"
 #include "ui/Theme.h"
+#include "ui/RecentFiles.h"
+#include <QDir>
+#include <QFileInfo>
 #include "ui/HeaderFooterDialog.h"
 #include "docx/HeaderFooter.h"
 #include <QPdfWriter>
@@ -871,6 +874,31 @@ static void headerFooterTests(const QString &file)
           "titlePg inserted before docGrid");
 }
 
+static void recentTests()
+{
+    QStringList l;
+    for (int i = 0; i < 12; ++i)
+        l = recent::pushed(l, QStringLiteral("/docs/f%1.docx").arg(i));
+    CHECK(l.size() == recent::kMax && l.first() == QLatin1String("/docs/f11.docx"), "recent list capped, newest first");
+    l = recent::pushed(l, QStringLiteral("/docs/f5.docx"));
+    CHECK(l.first() == QLatin1String("/docs/f5.docx") && l.count(QStringLiteral("/docs/f5.docx")) == 1,
+          "reopening moves a file to the top without duplicating it");
+    l = recent::pushed(l, QStringLiteral("/docs/sub/../f5.docx"));
+    CHECK(l.count(QStringLiteral("/docs/f5.docx")) == 1, "paths normalised");
+    // Real absolute paths: "/tmp/x" is drive-relative on Windows.
+    const QString a = QDir(QDir::tempPath()).filePath(QStringLiteral("apq-a.docx"));
+    const QString b = QDir(QDir::tempPath()).filePath(QStringLiteral("apq-b.docx"));
+    recent::clear();
+    recent::add(a);
+    recent::add(b);
+    recent::remove(a);
+    const QStringList got = recent::load();
+    CHECK(got.size() == 1 && QFileInfo(got.value(0)) == QFileInfo(b),
+          qPrintable(QStringLiteral("recent list persists add/remove (%1)").arg(got.join(QLatin1Char('|')))));
+    recent::clear();
+    CHECK(recent::load().isEmpty(), "clear list");
+}
+
 static void spellMenuTest()
 {
     PageEdit edit;
@@ -1145,6 +1173,7 @@ int main(int argc, char **argv)
     QStandardPaths::setTestModeEnabled(true);  // personal dictionary etc. go to a test location
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("anyprocessorqt-tests"));
+    QApplication::setOrganizationName(QStringLiteral("anyprocessorqt-tests"));  // QSettings needs one on Windows
 
     QString keep;
     QStringList files;
@@ -1167,6 +1196,7 @@ int main(int argc, char **argv)
     }
     spellTests();
     spellMenuTest();
+    recentTests();
     paperTests();
     findReplaceTests();
     codeTests(keep.isEmpty() ? QString() : keep + QStringLiteral(".code.docx"));

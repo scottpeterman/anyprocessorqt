@@ -8,6 +8,7 @@
 #include "ui/InsertTableDialog.h"
 #include "ui/HeaderFooterDialog.h"
 #include "ui/PageEdit.h"
+#include "ui/RecentFiles.h"
 #include "ui/Theme.h"
 #include "ui/ZoomView.h"
 #include "spell/SpellChecker.h"
@@ -19,6 +20,7 @@
 #include <QCloseEvent>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFontComboBox>
@@ -414,7 +416,11 @@ void MainWindow::buildActions()
 void MainWindow::buildMenus()
 {
     QMenu *file = menuBar()->addMenu(tr("&File"));
-    file->addActions({m_new, m_open, m_save, m_saveAs});
+    file->addActions({m_new, m_open});
+    m_recentMenu = file->addMenu(tr("Open &Recent"));
+    connect(m_recentMenu, &QMenu::aboutToShow, this, &MainWindow::buildRecentMenu);
+    buildRecentMenu();
+    file->addActions({m_save, m_saveAs});
     file->addSeparator();
     file->addActions({m_exportPdf, m_print});
     file->addSeparator();
@@ -703,9 +709,50 @@ void MainWindow::closeEvent(QCloseEvent *e)
         e->ignore();
 }
 
+void MainWindow::buildRecentMenu()
+{
+    m_recentMenu->clear();
+    const QStringList files = recent::load();
+    int n = 0;
+    for (const QString &path : files) {
+        const QFileInfo fi(path);
+        // Number the first nine for keyboard access; tooltip/status shows the folder.
+        QString label = fi.fileName();
+        label.replace(QLatin1Char('&'), QLatin1String("&&"));
+        if (++n <= 9)
+            label = QStringLiteral("&%1  %2").arg(n).arg(label);
+        QAction *a = m_recentMenu->addAction(label);
+        a->setToolTip(QDir::toNativeSeparators(path));
+        a->setStatusTip(QDir::toNativeSeparators(path));
+        a->setEnabled(fi.exists());
+        connect(a, &QAction::triggered, this, [this, path] { openRecent(path); });
+    }
+    m_recentMenu->setToolTipsVisible(true);
+    if (files.isEmpty()) {
+        m_recentMenu->addAction(tr("(none)"))->setEnabled(false);
+        return;
+    }
+    m_recentMenu->addSeparator();
+    m_recentMenu->addAction(tr("&Clear List"), this, [] { recent::clear(); });
+}
+
+void MainWindow::openRecent(const QString &path)
+{
+    if (!QFileInfo::exists(path)) {
+        recent::remove(path);
+        statusBar()->showMessage(tr("%1 no longer exists").arg(QDir::toNativeSeparators(path)), 4000);
+        return;
+    }
+    if (!maybeSave())
+        return;
+    openFile(path);
+}
+
 void MainWindow::setCurrentPath(const QString &path)
 {
     m_path = path;
+    if (!path.isEmpty())
+        recent::add(path);
     const QString name = path.isEmpty() ? tr("Untitled") : QFileInfo(path).fileName();
     setWindowTitle(QStringLiteral("%1[*] — anyprocessorqt").arg(name));
     setWindowModified(m_edit->document()->isModified());
