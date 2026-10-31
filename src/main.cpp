@@ -1,5 +1,6 @@
 #include "docx/DocxReader.h"
 #include "docx/DocxWriter.h"
+#include "docx/HeaderFooter.h"
 #include "docx/Units.h"
 #include "ui/MainWindow.h"
 #include "ui/PageEdit.h"
@@ -102,8 +103,10 @@ static int cliPdf(const QString &in, const QString &out)
     printer.setOutputFileName(out);
     printer.setPageLayout(QPageLayout(QPageSize(QSizeF(pkg.page.width / 1440.0, pkg.page.height / 1440.0), QPageSize::Inch),
                                       QPageLayout::Portrait, QMarginsF(0, 0, 0, 0)));
+    docx::HeaderFooters hf;
+    hf.load(pkg);
+    PageEdit::printPages(&doc, pkg.page, &hf, &printer);
     doc.setPageSize(QSizeF(docx::twipsToPx(pkg.page.width), docx::twipsToPx(pkg.page.height)));
-    doc.print(&printer);
     QTextStream(stdout) << "ok " << doc.pageCount() << " pages -> " << out << Qt::endl;
     return 0;
 }

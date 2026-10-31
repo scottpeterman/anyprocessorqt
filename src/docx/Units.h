@@ -38,6 +38,7 @@ enum Prop : int {
     SpacingShown,                            // block: "top,bottom" px as displayed
     LineOrig,                                // block: "line|rule" docx spacing when display compensated
     LineShown,                               // block: line height as displayed ("type|value")
+    FieldInstr,                              // char: field result of PAGE / NUMPAGES ("PAGE", "NUMPAGES")
 };
 
 } // namespace docx

@@ -73,7 +73,7 @@ jobs:
           cmake --build build -j4 > step.log 2>&1 || { cat step.log; grep -inE "error|missing|fail|cannot|not found|undefined" step.log | tail -n 8 | sed 's/^/::error::/'; tail -n 2 step.log | sed 's/^/::error::/'; exit 1; }
           cat step.log
       - name: Test
-        run: ./build/anyprocessorqt_tests tests/fixtures/features.docx
+        run: ./build/anyprocessorqt_tests tests/fixtures/features.docx tests/fixtures/headers.docx
       - name: AppImage
         run: |
           bash packaging/linux/bundle-appimage.sh build dist > step.log 2>&1 || { cat step.log; grep -inE "error|missing|fail|cannot|not found|undefined" step.log | tail -n 8 | sed 's/^/::error::/'; tail -n 2 step.log | sed 's/^/::error::/'; exit 1; }
@@ -109,7 +109,7 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release > step.log 2>&1 || { cat step.log; grep -inE "error|missing|fail|cannot|not found|undefined" step.log | tail -n 8 | sed 's/^/::error::/'; exit 1; }
           cmake --build build -j4 > step.log 2>&1 || { cat step.log; grep -inE "error|missing|fail|cannot|not found|undefined" step.log | tail -n 8 | sed 's/^/::error::/'; exit 1; }
       - name: Test
-        run: ./build/anyprocessorqt_tests tests/fixtures/features.docx
+        run: ./build/anyprocessorqt_tests tests/fixtures/features.docx tests/fixtures/headers.docx
       - name: AppImage
         run: |
           bash packaging/linux/bundle-appimage.sh build dist > step.log 2>&1 || { cat step.log; grep -inE "error|missing|fail|cannot|not found|undefined" step.log | tail -n 8 | sed 's/^/::error::/'; tail -n 2 step.log | sed 's/^/::error::/'; exit 1; }
@@ -222,7 +222,7 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build -j4
       - name: Test
-        run: ./build/anyprocessorqt_tests tests/fixtures/features.docx
+        run: ./build/anyprocessorqt_tests tests/fixtures/features.docx tests/fixtures/headers.docx
       - name: DMG
         run: |
           bash packaging/macos/bundle-mac.sh build dist > step.log 2>&1 || { cat step.log; grep -inE "error|missing|fail|cannot|not found|undefined" step.log | tail -n 8 | sed 's/^/::error::/'; tail -n 2 step.log | sed 's/^/::error::/'; exit 1; }
@@ -257,7 +257,7 @@ jobs:
           cmake --build build --config Release -j4
       - name: Test
         shell: bash
-        run: ./build/Release/anyprocessorqt_tests.exe tests/fixtures/features.docx
+        run: ./build/Release/anyprocessorqt_tests.exe tests/fixtures/features.docx tests/fixtures/headers.docx
       - name: Zip
         shell: bash
         run: bash packaging/windows/bundle-windows.sh build dist

@@ -6,6 +6,7 @@
 #include "docx/Units.h"
 #include "ui/FindBar.h"
 #include "ui/InsertTableDialog.h"
+#include "ui/HeaderFooterDialog.h"
 #include "ui/PageEdit.h"
 #include "ui/Theme.h"
 #include "ui/ZoomView.h"
@@ -69,6 +70,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     layout->setSpacing(0);
     m_zoomView = new ZoomView(m_edit, central);
     layout->addWidget(m_zoomView, 1);
+    m_edit->setHeaderFooters(&m_hf);
+    connect(m_edit, &PageEdit::headerFooterRequested, this, &MainWindow::editHeaderFooter);
     m_findBar = new FindBar(m_edit, central);
     layout->addWidget(m_findBar);
     setCentralWidget(central);
@@ -322,6 +325,7 @@ void MainWindow::buildActions()
     m_resizeImage = mk(tr("Image &Size…"), QKeySequence(), [this] { resizeImage(); });
     m_insTable = mk(tr("&Table…"), QKeySequence(), [this] { insertTable(); }, "insert-table");
     m_insBreak = mk(tr("&Page Break"), QKeySequence(Qt::CTRL | Qt::Key_Return), [this] { insertPageBreak(); });
+    m_insHeaderFooter = mk(tr("Header && &Footer…"), QKeySequence(), [this] { editHeaderFooter(false, 1); });
     m_insLink = mk(tr("&Hyperlink…"), QKeySequence(Qt::CTRL | Qt::Key_K), [this] { insertHyperlink(); }, "insert-link");
 
     auto table = [this] { return m_edit->textCursor().currentTable(); };
@@ -453,6 +457,8 @@ void MainWindow::buildMenus()
 
     QMenu *insert = menuBar()->addMenu(tr("&Insert"));
     insert->addActions({m_insImage, m_insTable, m_insLink, m_insBreak});
+    insert->addSeparator();
+    insert->addAction(m_insHeaderFooter);
 
     QMenu *table = menuBar()->addMenu(tr("&Table"));
     table->addAction(m_insTable);
@@ -557,6 +563,7 @@ void MainWindow::newDocument()
     m_pkg = Package::blank();
     QString err;
     DocxReader::build(m_pkg, m_edit->document(), &err);
+    m_hf.load(m_pkg);
     m_edit->setPageSetup(m_pkg.page);
     m_edit->document()->clearUndoRedoStacks();
     m_zoomView->scrollToTop();
@@ -578,6 +585,7 @@ bool MainWindow::openFile(const QString &path)
         return false;
     }
     m_pkg = pkg;
+    m_hf.load(m_pkg);
     m_edit->setPageSetup(m_pkg.page);
     m_edit->document()->clearUndoRedoStacks();
     m_edit->moveCursor(QTextCursor::Start);
@@ -635,11 +643,15 @@ bool MainWindow::saveTo(const QString &path)
     return true;
 }
 
-static void printDocument(QTextDocument *doc, const PageSetup &page, QPrinter *printer)
+
+void MainWindow::editHeaderFooter(bool footer, int page)
 {
-    std::unique_ptr<QTextDocument> copy(doc->clone());
-    copy->setPageSize(QSizeF(twipsToPx(page.width), twipsToPx(page.height)));
-    copy->print(printer);
+    HeaderFooterDialog dlg(m_pkg, m_hf, footer, page == 0, this);
+    if (dlg.exec() != QDialog::Accepted || !dlg.apply())
+        return;
+    m_hf.load(m_pkg);
+    m_edit->document()->setModified(true);  // the header lives in the package; Save writes it
+    m_edit->viewport()->update();
 }
 
 void MainWindow::exportPdf()
@@ -657,7 +669,7 @@ void MainWindow::exportPdf()
     printer.setPageLayout(QPageLayout(QPageSize(QSizeF(m_pkg.page.width / 1440.0, m_pkg.page.height / 1440.0),
                                                 QPageSize::Inch),
                                       QPageLayout::Portrait, QMarginsF(0, 0, 0, 0)));
-    printDocument(m_edit->document(), m_pkg.page, &printer);
+    PageEdit::printPages(m_edit->document(), m_pkg.page, &m_hf, &printer);
     statusBar()->showMessage(tr("Exported %1").arg(QFileInfo(path).fileName()), 3000);
 }
 
@@ -669,7 +681,7 @@ void MainWindow::print()
                                       QPageLayout::Portrait, QMarginsF(0, 0, 0, 0)));
     QPrintDialog dlg(&printer, this);
     if (dlg.exec() == QDialog::Accepted)
-        printDocument(m_edit->document(), m_pkg.page, &printer);
+        PageEdit::printPages(m_edit->document(), m_pkg.page, &m_hf, &printer, printer.fromPage(), printer.toPage());
 }
 
 bool MainWindow::maybeSave()

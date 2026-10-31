@@ -5,7 +5,12 @@
 
 #include <QTextEdit>
 
+class QPagedPaintDevice;
 class QPainter;
+
+namespace docx {
+class HeaderFooters;
+}
 
 namespace spell {
 class SpellHighlighter;
@@ -46,6 +51,15 @@ public:
     void setColors(const QColor &desk, theme::Paper paper);
     theme::Paper paper() const { return m_paper; }
 
+    // Headers/footers shown in Page view (not owned). Null hides them.
+    void setHeaderFooters(const docx::HeaderFooters *hf);
+
+    // Print/PDF: every page at the device's full size, body as laid out here
+    // (same page breaks as Page view), with paragraph borders and headers/footers.
+    // fromPage/toPage are 1-based and inclusive; 0 means the first/last page.
+    static void printPages(QTextDocument *doc, const docx::PageSetup &page, const docx::HeaderFooters *hf,
+                           QPagedPaintDevice *device, int fromPage = 0, int toPage = 0);
+
     static constexpr int kPageGap = 16;  // desk band drawn between pages, document px
     static void paintPageGaps(QPainter &p, QTextDocument *doc, const QRectF &clip, const QColor &desk);
 
@@ -58,9 +72,11 @@ protected:
     bool canInsertFromMimeData(const QMimeData *source) const override;
     void insertFromMimeData(const QMimeData *source) override;
     void contextMenuEvent(QContextMenuEvent *e) override;
+    void mouseDoubleClickEvent(QMouseEvent *e) override;
 
 signals:
-    void geometryHintsChanged();  // view mode or page setup changed: the host should re-lay out
+    void geometryHintsChanged();
+    void headerFooterRequested(bool footer, int page);  // double-click in a page's top/bottom margin  // view mode or page setup changed: the host should re-lay out
 
 private:
     void updateMargins();
@@ -73,4 +89,5 @@ private:
     spell::SpellHighlighter *m_spell = nullptr;
     QColor m_desk = QColor(0xE6, 0xE6, 0xE6);
     theme::Paper m_paper = theme::Paper::White;
+    const docx::HeaderFooters *m_hf = nullptr;
 };

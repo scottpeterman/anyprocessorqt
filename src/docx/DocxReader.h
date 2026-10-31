@@ -17,6 +17,10 @@ public:
     // Build the document from an already-loaded package (also used for new documents).
     static bool build(const Package &pkg, QTextDocument *doc, QString *error);
 
+    // Build a header/footer part (w:hdr / w:ftr) into doc, laid out at the page's
+    // text width with no frame margins. PAGE/NUMPAGES results carry FieldInstr.
+    static bool buildPart(const Package &pkg, const QString &part, QTextDocument *doc, QString *error);
+
     // Page margins, default font and indent width from the package.
     static void applyPageSetup(const Package &pkg, QTextDocument *doc);
 };

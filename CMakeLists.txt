@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.19)
 
-project(anyprocessorqt VERSION 0.6.0 LANGUAGES CXX)
+project(anyprocessorqt VERSION 0.7.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -62,6 +62,8 @@ add_library(anyprocessor_core STATIC
     src/docx/DocxReader.h
     src/docx/DocxWriter.cpp
     src/docx/DocxWriter.h
+    src/docx/HeaderFooter.cpp
+    src/docx/HeaderFooter.h
 )
 target_include_directories(anyprocessor_core PUBLIC src)
 target_link_libraries(anyprocessor_core PUBLIC Qt6::Core Qt6::Gui)
@@ -90,6 +92,8 @@ add_executable(anyprocessorqt
     src/ui/ZoomView.h
     src/ui/Theme.cpp
     src/ui/Theme.h
+    src/ui/HeaderFooterDialog.cpp
+    src/ui/HeaderFooterDialog.h
 )
 target_compile_definitions(anyprocessorqt PRIVATE ANYPROCESSORQT_VERSION="${PROJECT_VERSION}")
 target_link_libraries(anyprocessorqt PRIVATE anyprocessor_core anyprocessor_spell Qt6::Widgets Qt6::PrintSupport)
@@ -107,7 +111,7 @@ elseif(APPLE)
 endif()
 
 if(ANYPROCESSORQT_BUILD_TESTS)
-    add_executable(anyprocessorqt_tests tests/docx_tests.cpp src/ui/PageEdit.cpp src/ui/PageEdit.h src/ui/FindBar.cpp src/ui/FindBar.h src/ui/ZoomView.cpp src/ui/ZoomView.h src/ui/Theme.cpp src/ui/Theme.h)
+    add_executable(anyprocessorqt_tests tests/docx_tests.cpp src/ui/PageEdit.cpp src/ui/PageEdit.h src/ui/FindBar.cpp src/ui/FindBar.h src/ui/ZoomView.cpp src/ui/ZoomView.h src/ui/Theme.cpp src/ui/Theme.h src/ui/HeaderFooterDialog.cpp src/ui/HeaderFooterDialog.h)
     target_link_libraries(anyprocessorqt_tests PRIVATE anyprocessor_core anyprocessor_spell Qt6::Widgets)
 endif()
 
