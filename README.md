@@ -38,6 +38,39 @@ Paragraph and run formatting are written as differences from the paragraph's sty
 | Shapes, text boxes, charts, SmartArt, equations | Not shown; lost on save |
 | Section breaks inside the document | Collapsed to the final section's page setup |
 
+## Install
+
+Download from [Releases](https://github.com/scottpeterman/anyprocessorqt/releases):
+
+| Platform | File |
+|---|---|
+| Linux / ChromeOS, Intel/AMD | `anyprocessorqt-<version>-x86_64.AppImage` |
+| Linux / ChromeOS, ARM | `anyprocessorqt-<version>-aarch64.AppImage` |
+| macOS (Apple Silicon) | `anyprocessorqt-<version>-macos-arm64.dmg` |
+| Windows | `anyprocessorqt-<version>-windows-x64.zip` |
+
+`uname -m` tells you which Linux file you need.
+
+### Linux and ChromeOS (AppImage)
+
+The AppImage bundles Qt with its X11 and Wayland plugins, so nothing else from Qt is needed. AppImages mount themselves with FUSE, and Office documents need the metric-compatible fonts:
+
+```bash
+sudo apt install libfuse2 fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2
+chmod +x anyprocessorqt-*.AppImage
+./anyprocessorqt-0.1.0-x86_64.AppImage
+```
+
+Without FUSE, run it with `--appimage-extract-and-run`. Every release is tested in a stock Debian bookworm container (the ChromeOS Linux base) under both X11 and Wayland.
+
+### macOS
+
+Open the DMG and drag anyprocessorqt to Applications. The app is ad-hoc signed, not notarized: the first time, right-click it and choose Open.
+
+### Windows
+
+Unzip anywhere and run `anyprocessorqt.exe`.
+
 ## Build
 
 Requirements: CMake ≥ 3.19, a C++17 compiler, Qt ≥ 6.4 (Core, Gui, Widgets, PrintSupport). No other libraries — the zip reader/writer is built in.
@@ -88,7 +121,17 @@ Builds a document the way the editor does (styles, lists, nested levels, tables 
 - Header/footer display and editing
 - Find and replace dialog, spell check
 - Table properties dialog (borders, widths, alignment)
-- Release builds for Linux (AppImage), macOS and Windows
+
+## Releasing
+
+Set the version in `project(anyprocessorqt VERSION x.y.z)` in `CMakeLists.txt`, commit, then tag it:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+`.github/workflows/release.yml` builds and tests every package, runs the AppImages in Debian bookworm under X11 and Wayland, and publishes the release with `SHA256SUMS.txt`. The tag must match the CMake version. Packaging scripts live in `packaging/`.
 
 ## License
 

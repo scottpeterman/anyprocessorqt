@@ -9,6 +9,7 @@
 #include <QCommandLineParser>
 #include <QFile>
 #include <QFont>
+#include <QIcon>
 #include <QImage>
 #include <QPageLayout>
 #include <QPageSize>
@@ -152,13 +153,24 @@ int main(int argc, char *argv[])
             || a == "--screenshot")
             headless = true;
     }
+#ifdef Q_OS_LINUX
+    // Linux may have no display at all (CI, SSH). macOS and Windows always have their
+    // native platform plugin, which handles the headless modes without showing a window.
     if (headless && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))
         qputenv("QT_QPA_PLATFORM", "offscreen");
+#endif
 
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("anyprocessorqt"));
     QApplication::setOrganizationName(QStringLiteral("anyprocessorqt"));
     QApplication::setApplicationVersion(QStringLiteral(ANYPROCESSORQT_VERSION));
+    QApplication::setDesktopFileName(QStringLiteral("anyprocessorqt"));
+    {
+        QIcon icon;
+        for (const char *s : {"32", "64", "256"})
+            icon.addFile(QStringLiteral(":/icons/anyprocessorqt-%1.png").arg(QLatin1String(s)));
+        QApplication::setWindowIcon(icon);
+    }
     installFontSubstitutions();
 
     QCommandLineParser parser;

@@ -5,6 +5,7 @@ project(anyprocessorqt VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 
 if(MSVC)
     add_compile_options(/utf-8)  # sources contain UTF-8 literals (bullets, dashes)
@@ -40,7 +41,17 @@ add_library(anyprocessor_core STATIC
 target_include_directories(anyprocessor_core PUBLIC src)
 target_link_libraries(anyprocessor_core PUBLIC Qt6::Core Qt6::Gui)
 
+set(APP_ICON_SOURCES resources/resources.qrc)
+if(WIN32)
+    list(APPEND APP_ICON_SOURCES packaging/windows/anyprocessorqt.rc)
+elseif(APPLE)
+    set(MACOS_ICON ${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons/anyprocessorqt.icns)
+    set_source_files_properties(${MACOS_ICON} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    list(APPEND APP_ICON_SOURCES ${MACOS_ICON})
+endif()
+
 add_executable(anyprocessorqt
+    ${APP_ICON_SOURCES}
     src/main.cpp
     src/ui/PageEdit.cpp
     src/ui/PageEdit.h
@@ -58,6 +69,8 @@ elseif(APPLE)
     set_target_properties(anyprocessorqt PROPERTIES
         MACOSX_BUNDLE ON
         MACOSX_BUNDLE_GUI_IDENTIFIER io.github.scottpeterman.anyprocessorqt
+        MACOSX_BUNDLE_BUNDLE_NAME anyprocessorqt
+        MACOSX_BUNDLE_ICON_FILE anyprocessorqt.icns
         MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
         MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
 endif()
@@ -68,3 +81,10 @@ if(ANYPROCESSORQT_BUILD_TESTS)
 endif()
 
 install(TARGETS anyprocessorqt RUNTIME DESTINATION bin BUNDLE DESTINATION .)
+if(UNIX AND NOT APPLE)
+    install(FILES packaging/linux/anyprocessorqt.desktop DESTINATION share/applications)
+    foreach(size 16 32 48 64 128 256 512)
+        install(FILES packaging/icons/anyprocessorqt-${size}.png
+                DESTINATION share/icons/hicolor/${size}x${size}/apps RENAME anyprocessorqt.png)
+    endforeach()
+endif()
