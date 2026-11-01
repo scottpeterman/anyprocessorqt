@@ -532,25 +532,30 @@ void MainWindow::buildToolbars()
     m_styleCombo = new QComboBox(fmt);
     m_styleCombo->setMinimumContentsLength(14);
     m_styleCombo->setToolTip(tr("Paragraph style"));
+    // Toolbar combos must never hold keyboard focus: a focused, closed combo turns
+    // Up/Down into "pick the next item", which restyles the current paragraph.
+    m_styleCombo->setFocusPolicy(Qt::NoFocus);
     fmt->addWidget(m_styleCombo);
     connect(m_styleCombo, qOverload<int>(&QComboBox::activated), this, [this](int idx) {
         applyParagraphStyle(m_styleCombo->itemData(idx).toString());
-        m_edit->setFocus();
+        focusEditor();
     });
 
     m_fontCombo = new QFontComboBox(fmt);
     m_fontCombo->setToolTip(tr("Font"));
+    m_fontCombo->setFocusPolicy(Qt::NoFocus);
     fmt->addWidget(m_fontCombo);
     connect(m_fontCombo, &QFontComboBox::textActivated, this, [this](const QString &family) {
         QTextCharFormat f;
         f.setFontFamilies(QStringList{family});
         mergeFormat(f);
-        m_edit->setFocus();
+        focusEditor();
     });
 
     m_sizeCombo = new QComboBox(fmt);
     m_sizeCombo->setEditable(true);
     m_sizeCombo->setToolTip(tr("Font size"));
+    m_sizeCombo->setFocusPolicy(Qt::ClickFocus);  // editable: typing a size needs focus, Tab never lands here
     for (int s : {8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72})
         m_sizeCombo->addItem(QString::number(s));
     m_sizeCombo->setMinimumContentsLength(3);
@@ -563,7 +568,7 @@ void MainWindow::buildToolbars()
             f.setFontPointSize(pt);
             mergeFormat(f);
         }
-        m_edit->setFocus();
+        focusEditor();
     });
 
     fmt->addSeparator();
@@ -611,6 +616,7 @@ void MainWindow::newDocument()
     m_zoomView->scrollToTop();
     rebuildStyleCombo();
     setCurrentPath(QString());
+    focusEditor();
     updateFormatUi();
     updateWordCount();
 }
@@ -634,6 +640,7 @@ bool MainWindow::openFile(const QString &path)
     m_zoomView->scrollToTop();
     rebuildStyleCombo();
     setCurrentPath(path);
+    focusEditor();
     QSettings().setValue(QStringLiteral("lastDir"), QFileInfo(path).absolutePath());
     updateFormatUi();
     updateWordCount();
@@ -1129,6 +1136,11 @@ void MainWindow::insertTable()
     QTextTable *t = c.insertTable(dlg.rows(), dlg.columns(), newTableFormat(dlg.columns(), m_pkg.page.contentWidthPx()));
     applyTableCellFormats(t);
     c.endEditBlock();
+}
+
+void MainWindow::focusEditor()
+{
+    m_edit->takeFocus();
 }
 
 void MainWindow::tableProperties()

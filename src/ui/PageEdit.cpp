@@ -10,6 +10,9 @@
 #include <QImage>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QGraphicsProxyWidget>
+#include <QGraphicsScene>
+#include <QGraphicsView>
 #include <QPagedPaintDevice>
 #include <QPainter>
 #include <QScrollBar>
@@ -64,6 +67,15 @@ void PageEdit::updatePalette()
     pal.setColor(QPalette::Base, paper);
     pal.setColor(QPalette::Text, theme::inkColor(m_paper));
     setPalette(pal);
+}
+
+void PageEdit::takeFocus()
+{
+    if (QGraphicsProxyWidget *proxy = graphicsProxyWidget())
+        if (QGraphicsScene *sc = proxy->scene())
+            if (!sc->views().isEmpty())
+                sc->views().first()->setFocus(Qt::OtherFocusReason);
+    setFocus(Qt::OtherFocusReason);
 }
 
 void PageEdit::setEmbedded(bool embedded)

@@ -13,6 +13,8 @@
 #include "spell/SpellHighlighter.h"
 #include "ui/PageEdit.h"
 #include "ui/Theme.h"
+#include <QVBoxLayout>
+#include <QKeyEvent>
 #include "ui/TablePropertiesDialog.h"
 #include <QComboBox>
 #include <QDoubleSpinBox>
@@ -1007,6 +1009,46 @@ static void tableTests()
     CHECK(t->format().stringProperty(TableBorderSpec) == before && !doc.isUndoAvailable(), "table properties undo in one step");
 }
 
+static void focusTests(const QString &file)
+{
+    // Keys reach the editor through ZoomView: arrows move the cursor without
+    // touching the document, Tab types a tab instead of moving focus.
+    QWidget host;
+    auto *edit = new PageEdit;
+    auto *view = new ZoomView(edit, &host);
+    auto *layout = new QVBoxLayout(&host);
+    layout->addWidget(view);
+    Package pkg;
+    QString err;
+    if (!DocxReader::loadFile(file, edit->document(), &pkg, &err)) {
+        CHECK(false, "focus test doc loads");
+        return;
+    }
+    edit->setPageSetup(pkg.page);
+    host.resize(900, 700);
+    host.show();
+    QApplication::processEvents();
+    edit->takeFocus();
+    QApplication::processEvents();
+    CHECK(QApplication::focusWidget() == view || QApplication::focusWidget() == edit, "editor's view holds keyboard focus");
+    QTextDocument *doc = edit->document();
+    doc->setModified(false);
+    doc->clearUndoRedoStacks();
+    edit->moveCursor(QTextCursor::Start);
+    const int p0 = edit->textCursor().position();
+    for (int i = 0; i < 5; ++i) {
+        QKeyEvent down(QEvent::KeyPress, Qt::Key_Down, Qt::NoModifier);
+        QApplication::sendEvent(QApplication::focusWidget(), &down);
+        QApplication::processEvents();
+    }
+    CHECK(edit->textCursor().position() > p0 && !doc->isModified() && !doc->isUndoAvailable(),
+          "Down moves the cursor and leaves the document alone");
+    QKeyEvent tab(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier, QStringLiteral("\t"));
+    QApplication::sendEvent(QApplication::focusWidget(), &tab);
+    QApplication::processEvents();
+    CHECK(edit->textCursor().block().text().contains(QLatin1Char('\t')), "Tab types into the editor");
+}
+
 static void spellMenuTest()
 {
     PageEdit edit;
@@ -1314,6 +1356,7 @@ int main(int argc, char **argv)
         if (f.endsWith(QLatin1String("features.docx"))) {
             viewTests(f);
             pageTests(f);
+            focusTests(f);
         }
         if (f.endsWith(QLatin1String("headers.docx")))
             headerFooterTests(f);

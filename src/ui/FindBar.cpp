@@ -1,4 +1,5 @@
 #include "ui/FindBar.h"
+#include "ui/PageEdit.h"
 
 #include <QCheckBox>
 #include <QGridLayout>
@@ -278,7 +279,10 @@ void FindBar::closeBar()
 {
     hide();
     m_edit->setExtraSelections({});
-    m_edit->setFocus();
+    if (auto *pe = qobject_cast<PageEdit *>(m_edit))
+        pe->takeFocus();
+    else
+        m_edit->setFocus();
 }
 
 void FindBar::keyPressEvent(QKeyEvent *e)
