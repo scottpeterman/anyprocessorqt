@@ -10,12 +10,13 @@ jobs:
   # Distro Qt 6.4.2: the same floor as ChromeOS (Debian bookworm).
   linux-qt64:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Install Qt and fonts
         run: |
-          sudo apt-get update
-          sudo apt-get install -y qt6-base-dev qt6-base-dev-tools libgl-dev fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y qt6-base-dev qt6-base-dev-tools libgl-dev fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2
       - name: Build
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -47,6 +48,7 @@ jobs:
             qt_host: windows
             qt_arch: win64_msvc2022_64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Install Qt 6.10.3
@@ -62,8 +64,8 @@ jobs:
       - name: Linux build deps
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libgl-dev libxkbcommon-dev fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y libgl-dev libxkbcommon-dev fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2
       - name: Build
         shell: bash
         run: |

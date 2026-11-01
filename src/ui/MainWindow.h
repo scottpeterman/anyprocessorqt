@@ -56,6 +56,7 @@ private:
     void resizeImage();
     void insertTable();
     void tableProperties();
+    void focusEditor();
     void insertPageBreak();
     void insertHyperlink();
     void toggleCodeBlock();

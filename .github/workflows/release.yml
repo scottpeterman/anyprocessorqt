@@ -24,6 +24,7 @@ env:
 jobs:
   meta:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
@@ -51,12 +52,13 @@ jobs:
             qt_host: linux
             qt_arch: linux_gcc_64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libgl-dev libegl1 libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-xinput0 libwayland-client0 libwayland-cursor0 libwayland-egl1 libopengl0 libfontconfig1 fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2 file
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y libgl-dev libegl1 libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-xinput0 libwayland-client0 libwayland-cursor0 libwayland-egl1 libopengl0 libfontconfig1 fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2 file
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
@@ -95,6 +97,7 @@ jobs:
   linux-arm64:
     needs: meta
     runs-on: ubuntu-22.04-arm
+    timeout-minutes: 30
     container: debian:bookworm
     env:
       APPIMAGE_EXTRACT_AND_RUN: 1
@@ -102,8 +105,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build dependencies
         run: |
-          apt-get update
-          apt-get install -y --no-install-recommends build-essential cmake qt6-base-dev qt6-base-dev-tools qt6-wayland libgl-dev libopengl0 libxkbcommon-dev curl file ca-certificates fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2
+          apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends build-essential cmake qt6-base-dev qt6-base-dev-tools qt6-wayland libgl-dev libopengl0 libxkbcommon-dev curl file ca-certificates fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2
       - name: Build
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release > step.log 2>&1 || { cat step.log; grep -inE "error|missing|fail|cannot|not found|undefined" step.log | tail -n 8 | sed 's/^/::error::/'; exit 1; }
@@ -139,6 +142,7 @@ jobs:
           - os: ubuntu-22.04-arm
             arch: aarch64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     container: debian:bookworm
     steps:
       - uses: actions/checkout@v4
@@ -148,8 +152,8 @@ jobs:
           path: dist
       - name: Desktop basics only
         run: |
-          apt-get update
-          apt-get install -y --no-install-recommends xvfb xauth weston libgl1 libegl1 fontconfig fonts-crosextra-carlito
+          apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends xvfb xauth weston libgl1 libegl1 fontconfig fonts-crosextra-carlito
       - name: Missing libraries sweep
         run: |
           app=$(ls dist/*.AppImage)
@@ -209,6 +213,7 @@ jobs:
   macos:
     needs: meta
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Install Qt
@@ -240,6 +245,7 @@ jobs:
   windows:
     needs: meta
     runs-on: windows-2022
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Install Qt
@@ -278,6 +284,7 @@ jobs:
     if: github.ref_type == 'tag'
     needs: [meta, linux, linux-arm64, bookworm, macos, windows]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/download-artifact@v4
         with:

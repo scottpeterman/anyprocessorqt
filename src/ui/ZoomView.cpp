@@ -27,7 +27,9 @@ ZoomView::ZoomView(PageEdit *edit, QWidget *parent) : QGraphicsView(parent), m_e
     setViewportUpdateMode(QGraphicsView::MinimalViewportUpdate);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
-    setFocusPolicy(Qt::NoFocus);
+    // Keyboard focus sits on the view, which forwards keys to the embedded editor.
+    // NoFocus here left window focus on the first toolbar widget at startup.
+    setFocusPolicy(Qt::StrongFocus);
 
     m_edit->setEmbedded(true);
     m_edit->setParent(nullptr);  // only top-level widgets can be embedded in a scene

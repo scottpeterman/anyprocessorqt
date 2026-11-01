@@ -33,6 +33,10 @@ public:
     // Embedded in ZoomView: no scrollbars or desk margins of its own; the view
     // scales, scrolls and centres it.
     void setEmbedded(bool embedded);
+
+    // Give this editor keyboard focus. Embedded in ZoomView, the view must hold
+    // window focus too, or keys go to whatever toolbar widget has it.
+    void takeFocus();
     bool isEmbedded() const { return m_embedded; }
 
     void setPageSetup(const docx::PageSetup &page);
